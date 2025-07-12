@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/0xReLogic/Relogic_Tunnel/releases)
 
-**Relogic Tunnel** is a simple, lightweight, and open-source HTTP tunnel solution inspired by ngrok — but without limitations, login requirements, or monthly fees.
+**Relogic Tunnel** is a simple, lightweight, and open-source HTTP tunnel solution inspired by ngrok but without limitations, login requirements, or monthly fees.
 
 ---
 
@@ -68,7 +68,7 @@ Want to test apps on the internet but don't want to use ngrok's complexity?
 
 ### Setup Steps
 
-1. **Download** `tunnel-server.exe` and `tunnel-client.exe` from [Releases](https://github.com/0xReLogic/Relogic_Tunnel/releases)
+1. **Download** `tunnel-server.exe` and `tunnel-client.exe` from [Releases](https://github.com/0xReLogic/Relogic_Tunnel)
 2. **Upload server** to your VPS and run:
    ```
    tunnel-server.exe --port 9000 --token whatsyourapple
