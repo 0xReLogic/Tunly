@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/0xReLogic/Relogic_Tunnel/releases)
 
-**Relogic Tunnel** adalah solusi tunnel HTTP sederhana, ringan, dan open source, terinspirasi dari ngrok — tapi tanpa batasan, tanpa login, dan tanpa biaya bulanan.
+**Relogic Tunnel** adalah solusi tunnel HTTP sederhana, ringan, dan open source, terinspirasi dari ngrok tapi tanpa batasan, tanpa login, dan tanpa biaya bulanan.
 
 ---
 
@@ -62,7 +62,7 @@ Mau test aplikasi di internet tapi gak mau pake ngrok yang ribet?
 
 ## Cara Pakai
 
-1. **Download** `tunnel-server.exe` dan `tunnel-client.exe` dari [Releases](https://github.com/0xReLogic/Relogic_Tunnel/releases)
+1. **Download** `tunnel-server.exe` dan `tunnel-client.exe` dari [Releases](https://github.com/0xReLogic/Relogic_Tunnel)
 2. **Edit** file `config.txt` dan isi dengan token yang sama dengan server
 3. **Jalankan server** di VPS/cloud:
    ```
@@ -88,7 +88,6 @@ Mau test aplikasi di internet tapi gak mau pake ngrok yang ribet?
 
 ## Made with ❤️ by Relogic
 
-Dibuat dengan semangat open source. Silakan fork, modifikasi, dan gunakan untuk kebutuhan apapun.
 
 ---
 
