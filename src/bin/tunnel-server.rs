@@ -24,7 +24,7 @@ struct ServerArgs {
     host: String,
 
     /// Port to bind, e.g. 9000
-    #[arg(long, default_value_t = 9000)]
+    #[arg(long, env = "PORT", default_value_t = 9000)]
     port: u16,
 
     /// Legacy combined bind (overrides host/port if provided), e.g. 0.0.0.0:9000
@@ -32,7 +32,7 @@ struct ServerArgs {
     bind: Option<String>,
 
     /// Authentication token required by client
-    #[arg(long)]
+    #[arg(long, env = "RELOGIC_TUNNEL_TOKEN")]
     token: String,
 }
 
@@ -86,6 +86,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/healthz", get(health))
         .route("/*path", any(proxy_handler))
         .with_state(state.clone());
 
@@ -171,6 +172,10 @@ async fn client_ws(stream: WebSocket, state: Arc<AppState>) {
     }
 
     println!("Client disconnected");
+}
+
+async fn health() -> &'static str {
+    "ok"
 }
 
 async fn proxy_handler(

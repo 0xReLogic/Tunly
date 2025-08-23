@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: relogic-tunnel-server
+    env: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /healthz
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: RELOGIC_TUNNEL_TOKEN
+        sync: false  # set this in Render Dashboard or via blueprint secret
+      - key: RUST_LOG
+        value: info
