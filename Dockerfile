@@ -7,7 +7,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 
 # Build only the server binary used on Render
-RUN cargo build --release --bin tunnel-server
+RUN cargo build --release --bin tunly-server
 
 # ---------- Runtime stage ----------
 FROM debian:bookworm-slim AS runtime
@@ -17,10 +17,10 @@ RUN useradd -m -u 10001 appuser
 WORKDIR /app
 
 # Copy binary
-COPY --from=builder /app/target/release/tunnel-server /app/tunnel-server
+COPY --from=builder /app/target/release/tunly-server /app/tunly-server
 
 ENV RUST_LOG=info
 
 # Render injects PORT automatically; we use --host 0.0.0.0 and read PORT from env via clap
 USER appuser
-CMD ["/app/tunnel-server", "--host", "0.0.0.0"]
+CMD ["/app/tunly-server", "--host", "0.0.0.0"]

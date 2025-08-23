@@ -1,20 +1,21 @@
 [package]
-name = "relogic_tunnel"
+name = "tunly"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
 [[bin]]
-name = "tunnel-server"
-path = "src/bin/tunnel-server.rs"
+name = "tunly-server"
+path = "src/bin/tunly-server.rs"
 
 [[bin]]
-name = "tunnel-client"
-path = "src/bin/tunnel-client.rs"
+name = "tunly-client"
+path = "src/bin/tunly-client.rs"
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
 base64 = "0.22"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 futures = "0.3"
 hyper = { version = "1", features = ["http1", "http2", "client", "server"] }
 reqwest = { version = "0.12", features = ["json", "gzip", "brotli", "deflate"] }

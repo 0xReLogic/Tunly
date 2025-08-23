@@ -1212,24 +1212,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "relogic_tunnel"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64",
- "clap",
- "futures",
- "hyper",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-tungstenite 0.23.1",
- "urlencoding",
-]
-
-[[package]]
 name = "reqwest"
 version = "0.12.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1825,6 +1807,24 @@ dependencies = [
  "sha1",
  "thiserror",
  "utf-8",
+]
+
+[[package]]
+name = "tunly"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64",
+ "clap",
+ "futures",
+ "hyper",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.23.1",
+ "urlencoding",
 ]
 
 [[package]]

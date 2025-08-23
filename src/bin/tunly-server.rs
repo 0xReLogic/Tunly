@@ -17,7 +17,7 @@ use tokio::sync::{mpsc, Mutex, RwLock, oneshot};
 use base64::{engine::general_purpose, Engine as _};
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "tunnel-server", about = "Relogic Tunnel Server")] 
+#[command(name = "tunly-server", about = "Tunly Server")] 
 struct ServerArgs {
     /// Host to bind, e.g. 0.0.0.0
     #[arg(long, default_value = "0.0.0.0")]
@@ -31,9 +31,9 @@ struct ServerArgs {
     #[arg(long)]
     bind: Option<String>,
 
-    /// Authentication token required by client
-    #[arg(long, env = "RELOGIC_TUNNEL_TOKEN")]
-    token: String,
+    /// Authentication token required by client (or use env TUNLY_TOKEN)
+    #[arg(long)]
+    token: Option<String>,
 }
 
 #[derive(Debug)]
@@ -77,8 +77,14 @@ pub struct ProxyResponse {
 async fn main() {
     let args = ServerArgs::parse();
 
+    // Resolve token: CLI > TUNLY_TOKEN
+    let effective_token = args
+        .token
+        .or_else(|| std::env::var("TUNLY_TOKEN").ok())
+        .expect("Token is required. Provide --token or set TUNLY_TOKEN env");
+
     let state = Arc::new(AppState {
-        token: args.token.clone(),
+        token: effective_token.clone(),
         outbound_tx: RwLock::new(None),
         pending: Mutex::new(HashMap::new()),
         req_id: AtomicU64::new(1),
@@ -95,7 +101,7 @@ async fn main() {
         .parse()
         .expect("--bind must be like 0.0.0.0:9000 or use --host/--port");
 
-    println!("Relogic Tunnel Server listening on http://{}", addr);
+    println!("Tunly Server listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

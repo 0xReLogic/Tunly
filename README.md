@@ -1,17 +1,17 @@
-# Relogic Tunnel
+# Tunly
 
 [![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/0xReLogic/Relogic_Tunnel/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/0xReLogic/Tunly/releases)
 
-**Relogic Tunnel** is a simple, lightweight, and open-source HTTP tunnel solution inspired by ngrok but without limitations, login requirements, or monthly fees.
+**Tunly** is a simple, lightweight, and open-source HTTP tunnel solution inspired by ngrok but without limitations, login requirements, or monthly fees.
 
 ---
 
 ## Motivation
 
 Many tunnel services like ngrok limit users with quotas, login requirements, or subscription fees.  
-**Relogic Tunnel** is here for developers, makers, and anyone who wants:
+**Tunly** is here for developers, makers, and anyone who wants:
 
 - **Access local applications from anywhere** without hassle
 - **No login, no dashboard, no limits**
@@ -32,11 +32,11 @@ Many tunnel services like ngrok limit users with quotas, login requirements, or 
 
 ---
 
-## When to Use Relogic Tunnel?
+## When to Use Tunly?
 
 ### **Demo & Presentations**
 Client wants direct access to your app? But your project is still on localhost?  
-**Solution**: Relogic Tunnel makes your localhost accessible from anywhere in 30 seconds.
+**Solution**: Tunly makes your localhost accessible from anywhere in 30 seconds.
 
 ### **Client Testing**
 Client needs to test new features but you haven't deployed to production yet?  
@@ -56,7 +56,7 @@ Have a new idea, want to share with friends but haven't deployed yet?
 
 ### **Private Testing**
 Want to test apps on the internet but don't want to use ngrok's complexity?  
-**Solution**: Relogic Tunnel = ngrok without login, without limits, without hassle.
+**Solution**: Tunly = ngrok without login, without limits, without hassle.
 
 ---
 
@@ -68,15 +68,15 @@ Want to test apps on the internet but don't want to use ngrok's complexity?
 
 ### Setup Steps
 
-1. **Download** `tunnel-server.exe` and `tunnel-client.exe` from [Releases](https://github.com/0xReLogic/Relogic_Tunnel)
+1. **Download** `tunly-server.exe` and `tunly-client.exe` from [Releases](https://github.com/0xReLogic/Tunly/releases)
 2. **Upload server** to your VPS and run:
    ```
-   tunnel-server.exe --port 9000 --token whatsyourapple
+   tunly-server.exe --port 9000 --token whatsyourapple
    ```
 3. **Edit config** on local computer, fill `config.txt` with the same token
 4. **Run client** on local computer:
    ```
-   tunnel-client.exe --remote-host <vps-address>:9000
+   tunly-client.exe --remote-host <vps-address>:9000
    ```
 5. **Access local app** from internet via `http://vps-address:9000`
 
@@ -87,6 +87,19 @@ Want to test apps on the internet but don't want to use ngrok's complexity?
 
 ---
 
+## Environment & Deploy
+
+- **Server env**:
+  - `PORT` (from platform, e.g., Render) — server listens on this port automatically.
+  - `TUNLY_TOKEN` — token for client authentication (server requires this).
+- **Client config**:
+  - `config.txt` with `token: <value>` (tolerant to `token=`/`token:`/`tokenn`).
+  - Or env `TUNLY_TOKEN`.
+- **Render Deploy**:
+  - Use `render.yaml` (Blueprint) or create Web Service with this repo.
+  - Health check path: `/healthz`.
+  - Set `TUNLY_TOKEN` in Render env vars.
+
 ## Security
 
 - Token is the "password" for your tunnel.
@@ -95,9 +108,8 @@ Want to test apps on the internet but don't want to use ngrok's complexity?
 
 ---
 
-## Made with ❤️ by Relogic
+# Made with ❤️ by ReLogic
 
-Built with open source spirit. Feel free to fork, modify, and use for any purpose.
 
 ---
 
@@ -107,4 +119,4 @@ MIT License — free to use for commercial and non-commercial purposes.
 
 ---
 
-> **Relogic Tunnel**: Like ngrok, but unlimited, no login required, and completely yours. 
+> **Tunly**: Like ngrok, but unlimited, no login required, and completely yours. 

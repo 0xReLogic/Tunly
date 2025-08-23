@@ -9,7 +9,7 @@ use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "tunnel-client", about = "Relogic Tunnel Client")] 
+#[command(name = "tunly-client", about = "Tunly Client")] 
 struct ClientArgs {
     /// Remote server host:port, e.g. 1.2.3.4:9000
     #[arg(long)]
@@ -210,8 +210,8 @@ fn is_hop_by_hop(name: &str) -> bool {
 }
 
 fn load_token() -> Result<String, String> {
-    // Try env first
-    if let Ok(tok) = std::env::var("RELOGIC_TUNNEL_TOKEN") { return Ok(tok); }
+    // Try env first (TUNLY_TOKEN only)
+    if let Ok(tok) = std::env::var("TUNLY_TOKEN") { return Ok(tok); }
 
     let content = fs::read_to_string("config.txt").map_err(|e| e.to_string())?;
     for line in content.lines() {
@@ -234,5 +234,5 @@ fn load_token() -> Result<String, String> {
             }
         }
     }
-    Err("token not found in config.txt".into())
+    Err("token not found in env TUNLY_TOKEN or config.txt".into())
 }
