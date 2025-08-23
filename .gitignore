@@ -1,0 +1,37 @@
+# Rust / Cargo
+/target/
+/debug/
+/release/
+
+# Windows/MSVC artifacts
+*.pdb
+*.exe
+*.dll
+*.lib
+*.obj
+
+# Logs & tmp
+*.log
+*.tmp
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / Editors
+.vscode/
+.idea/
+.vs/
+.fleet/
+*.code-workspace
+*.iml
+.history/
+
+# Rustfmt backups
+**/*.rs.bk
+
+# Local runtime config (contains token)
+config.txt
