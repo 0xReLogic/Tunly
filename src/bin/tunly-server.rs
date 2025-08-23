@@ -1,7 +1,8 @@
-use std::{collections::HashMap, net::SocketAddr, sync::{Arc, atomic::{AtomicU64, Ordering}}};
+use std::{collections::HashMap, net::SocketAddr, sync::{Arc, atomic::{AtomicU64, Ordering}}, time::{Duration, Instant}};
 
 use axum::{
     extract::{
+        connect_info::ConnectInfo,
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, Query, State,
     },
@@ -15,6 +16,13 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex, RwLock, oneshot};
 use base64::{engine::general_purpose, Engine as _};
+use rand::RngCore;
+
+// Simple per-IP rate limit for /token: 10 requests per 60 seconds
+const RL_WINDOW_SECS: u64 = 60;
+const RL_MAX_PER_WINDOW: u32 = 10;
+// Session idle TTL (seconds) before being GC-removed if no activity
+const SESSION_IDLE_TTL_SECS: u64 = 600;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tunly-server", about = "Tunly Server")] 
@@ -34,14 +42,50 @@ struct ServerArgs {
     /// Authentication token required by client (or use env TUNLY_TOKEN)
     #[arg(long)]
     token: Option<String>,
+
+    /// Allow token via query parameter for WS (not recommended). Default: false
+    #[arg(long, default_value_t = false)]
+    allow_token_query: bool,
+}
+
+#[derive(Debug, Clone)]
+enum AuthMode {
+    Fixed(String),
+    Ephemeral,
+}
+
+#[derive(Debug, Clone)]
+struct AccessLogEntry {
+    method: String,
+    uri: String,
+    status: u16,
+    dur_ms: u128,
+}
+
+#[derive(Debug)]
+struct SessionState {
+    outbound_tx: mpsc::Sender<ServerToClient>,
+    pending: Mutex<HashMap<u64, oneshot::Sender<ClientToServer>>>,
+    _created_at: Instant,
+    last_seen: Mutex<Instant>,
+    access_log: Mutex<Vec<AccessLogEntry>>, // ring buffer (last N)
 }
 
 #[derive(Debug)]
 struct AppState {
-    token: String,
-    outbound_tx: RwLock<Option<mpsc::Sender<ServerToClient>>>,
-    pending: Mutex<HashMap<u64, oneshot::Sender<ClientToServer>>>,
+    // For Fixed mode this holds the configured token; empty string in Ephemeral mode
+    _token: String,
     req_id: AtomicU64,
+    // Auth
+    auth_mode: AuthMode,
+    // token -> (ip, expiry, session)
+    issued_tokens: Mutex<HashMap<String, (String, Instant, String)>>,
+    // session -> state
+    sessions: RwLock<HashMap<String, Arc<SessionState>>>,
+    // rate limit map: ip -> (count, window_start)
+    rl: Mutex<HashMap<String, (u32, Instant)>>,
+    // config: allow token in query string for WS
+    allow_token_query: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -77,24 +121,83 @@ pub struct ProxyResponse {
 async fn main() {
     let args = ServerArgs::parse();
 
-    // Resolve token: CLI > TUNLY_TOKEN
-    let effective_token = args
-        .token
-        .or_else(|| std::env::var("TUNLY_TOKEN").ok())
-        .expect("Token is required. Provide --token or set TUNLY_TOKEN env");
+    // Auth mode: if --token or TUNLY_TOKEN provided => Fixed, else Ephemeral tokens via /token
+    let auth_mode = if let Some(t) = args.token.clone().or_else(|| std::env::var("TUNLY_TOKEN").ok()) {
+        AuthMode::Fixed(t)
+    } else {
+        AuthMode::Ephemeral
+    };
 
     let state = Arc::new(AppState {
-        token: effective_token.clone(),
-        outbound_tx: RwLock::new(None),
-        pending: Mutex::new(HashMap::new()),
+        _token: match &auth_mode { AuthMode::Fixed(t) => t.clone(), AuthMode::Ephemeral => String::new() },
         req_id: AtomicU64::new(1),
+        auth_mode: auth_mode.clone(),
+        issued_tokens: Mutex::new(HashMap::new()),
+        sessions: RwLock::new(HashMap::new()),
+        rl: Mutex::new(HashMap::new()),
+        allow_token_query: args.allow_token_query,
     });
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/token", get(token_endpoint))
         .route("/healthz", get(health))
+        .route("/s/:sid/_log", get(session_log))
         .route("/*path", any(proxy_handler))
         .with_state(state.clone());
+
+    // Background GC: periodically prune expired ephemeral tokens
+    {
+        let gc_state = state.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+                let now = Instant::now();
+                let mut issued = gc_state.issued_tokens.lock().await;
+                let before = issued.len();
+                issued.retain(|_, (_ip, exp, _sid)| *exp > now);
+                let removed = before.saturating_sub(issued.len());
+                if removed > 0 {
+                    eprintln!("GC: removed {} expired token(s)", removed);
+                }
+            }
+        });
+    }
+
+    // Background GC: remove idle sessions
+    {
+        let gc_state = state.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+                let now = Instant::now();
+                // snapshot
+                let entries: Vec<(String, Arc<SessionState>)> = {
+                    let sessions = gc_state.sessions.read().await;
+                    sessions.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                };
+                let mut to_remove = Vec::new();
+                for (sid, sess) in entries {
+                    let last = *sess.last_seen.lock().await;
+                    if now.duration_since(last).as_secs() >= SESSION_IDLE_TTL_SECS {
+                        to_remove.push(sid);
+                    }
+                }
+                if !to_remove.is_empty() {
+                    let mut sessions = gc_state.sessions.write().await;
+                    let mut removed = 0usize;
+                    for sid in to_remove {
+                        if sessions.remove(&sid).is_some() { removed += 1; }
+                    }
+                    if removed > 0 {
+                        eprintln!("GC: removed {} stale session(s)", removed);
+                    }
+                }
+            }
+        });
+    }
 
     let bind_str = if let Some(b) = args.bind.clone() { b } else { format!("{}:{}", args.host, args.port) };
     let addr: SocketAddr = bind_str
@@ -104,60 +207,173 @@ async fn main() {
     println!("Tunly Server listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let svc = app.into_make_service_with_connect_info::<SocketAddr>();
+    axum::serve(listener, svc).await.unwrap();
 }
 
 async fn ws_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    let token_ok = params
-        .get("token")
-        .map(|t| t == &state.token)
-        .unwrap_or(false);
+    let sid = match params.get("sid") { Some(s) if !s.is_empty() => s.clone(), _ => return (StatusCode::BAD_REQUEST, "missing sid").into_response() };
+
+    // Extract token, prefer Authorization header; only allow query token if explicitly enabled
+    let auth_header = headers.get(axum::http::header::AUTHORIZATION).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let bearer = auth_header.strip_prefix("Bearer ");
+    let token_str = if let Some(tok) = bearer { Some(tok.to_string()) } else if state.allow_token_query { params.get("token").cloned() } else { None };
+    let Some(token) = token_str else {
+        let msg = if state.allow_token_query { "missing token" } else { "missing token (use Authorization: Bearer <token>)" };
+        return (StatusCode::UNAUTHORIZED, msg).into_response()
+    };
+
+    let token_ok = match &state.auth_mode {
+        AuthMode::Fixed(expected) => token == *expected,
+        AuthMode::Ephemeral => {
+            let ip = addr.ip().to_string();
+            let mut issued = state.issued_tokens.lock().await;
+            if let Some((tok_ip, exp, session)) = issued.get(&token) {
+                if *tok_ip == ip && *exp > Instant::now() && *session == sid {
+                    issued.remove(&token);
+                    true
+                } else { false }
+            } else { false }
+        }
+    };
 
     if !token_ok {
         return (StatusCode::UNAUTHORIZED, "invalid token").into_response();
     }
 
-    ws.on_upgrade(move |socket| client_ws(socket, state))
+    ws.on_upgrade(move |socket| client_ws(socket, state, sid))
 }
 
-async fn client_ws(stream: WebSocket, state: Arc<AppState>) {
-    println!("Client connected via WebSocket");
+async fn token_endpoint(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    // Only available in Ephemeral mode
+    match &state.auth_mode {
+        AuthMode::Fixed(_) => {
+            return (StatusCode::FORBIDDEN, "token issuance disabled").into_response();
+        }
+        AuthMode::Ephemeral => {}
+    }
+
+    // Rate limiting per IP
+    let ip = addr.ip().to_string();
+    let now = Instant::now();
+    {
+        let mut rl = state.rl.lock().await;
+        use std::collections::hash_map::Entry;
+        match rl.entry(ip.clone()) {
+            Entry::Occupied(mut e) => {
+                let (ref mut count, ref mut start) = *e.get_mut();
+                let elapsed = now.duration_since(*start).as_secs();
+                if elapsed >= RL_WINDOW_SECS {
+                    *count = 1;
+                    *start = now;
+                } else if *count >= RL_MAX_PER_WINDOW {
+                    let retry_after = RL_WINDOW_SECS - elapsed;
+                    return axum::http::Response::builder()
+                        .status(StatusCode::TOO_MANY_REQUESTS)
+                        .header(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                        .header("retry-after", retry_after.to_string())
+                        .header("cache-control", "no-store")
+                        .header("x-robots-tag", "noindex, nofollow")
+                        .header("referrer-policy", "no-referrer")
+                        .body(axum::body::Body::from("rate limit exceeded for /token"))
+                        .unwrap();
+                } else {
+                    *count += 1;
+                }
+            }
+            Entry::Vacant(v) => {
+                v.insert((1, now));
+            }
+        }
+    }
+
+    // Generate random token & session, tie to requesting IP, TTL 5 minutes
+    let mut tok_bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut tok_bytes);
+    let token = general_purpose::URL_SAFE_NO_PAD.encode(tok_bytes);
+
+    let mut sid_bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut sid_bytes);
+    let session = general_purpose::URL_SAFE_NO_PAD.encode(sid_bytes);
+
+    let expiry = Instant::now() + Duration::from_secs(300);
+
+    {
+        let mut issued = state.issued_tokens.lock().await;
+        issued.insert(token.clone(), (ip, expiry, session.clone()));
+    }
+
+    // Return JSON with security headers
+    let body = format!(r#"{{"token":"{}","session":"{}","expires_in":{}}}"#, token, session, 300);
+    axum::http::Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .header("cache-control", "no-store")
+        .header("x-robots-tag", "noindex, nofollow")
+        .header("referrer-policy", "no-referrer")
+        .body(axum::body::Body::from(body))
+        .unwrap()
+}
+
+async fn client_ws(stream: WebSocket, state: Arc<AppState>, sid: String) {
+    println!("Client connected via WebSocket for session {}", sid);
 
     let (mut ws_tx, mut ws_rx) = stream.split();
 
     // Channel for outbound messages (server -> client)
     let (out_tx, mut out_rx) = mpsc::channel::<ServerToClient>(64);
 
-    // Store sender so HTTP handlers can forward requests
+    // Create session state and store
+    let session_state = Arc::new(SessionState { outbound_tx: out_tx.clone(), pending: Mutex::new(HashMap::new()), _created_at: Instant::now(), last_seen: Mutex::new(Instant::now()), access_log: Mutex::new(Vec::new()) });
     {
-        let mut guard = state.outbound_tx.write().await;
-        *guard = Some(out_tx.clone());
+        let mut sessions = state.sessions.write().await;
+        sessions.insert(sid.clone(), session_state.clone());
     }
 
     // Task: forward outbound messages to websocket
+    let write_session = session_state.clone();
     let write_task = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             let text = serde_json::to_string(&msg).unwrap();
             if ws_tx.send(Message::Text(text)).await.is_err() {
                 break;
             }
+            // update last_seen on outbound activity
+            {
+                let mut ls = write_session.last_seen.lock().await;
+                *ls = Instant::now();
+            }
         }
     });
 
     // Task: read inbound messages from websocket (responses from client)
     let read_state = state.clone();
+    let read_sid = sid.clone();
     let read_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_rx.next().await {
+            // update last_seen on any inbound WS message
+            if let Some(sess) = { read_state.sessions.read().await.get(&read_sid).cloned() } {
+                let mut ls = sess.last_seen.lock().await;
+                *ls = Instant::now();
+            }
             if let Message::Text(txt) = msg {
                 match serde_json::from_str::<ClientToServer>(&txt) {
                     Ok(ClientToServer::ProxyResponse(resp)) => {
-                        let mut pending = read_state.pending.lock().await;
-                        if let Some(tx) = pending.remove(&resp.id) {
-                            let _ = tx.send(ClientToServer::ProxyResponse(resp));
+                        let maybe_session = { read_state.sessions.read().await.get(&read_sid).cloned() };
+                        if let Some(sess) = maybe_session {
+                            let mut pending = sess.pending.lock().await;
+                            if let Some(tx) = pending.remove(&resp.id) {
+                                let _ = tx.send(ClientToServer::ProxyResponse(resp));
+                            }
                         }
                     }
                     Err(e) => {
@@ -171,36 +387,88 @@ async fn client_ws(stream: WebSocket, state: Arc<AppState>) {
     // Wait for either side to finish (disconnect)
     let _ = tokio::join!(write_task, read_task);
 
-    // Clear outbound sender on disconnect
+    // Remove session on disconnect
     {
-        let mut guard = state.outbound_tx.write().await;
-        *guard = None;
+        let mut sessions = state.sessions.write().await;
+        sessions.remove(&sid);
     }
 
-    println!("Client disconnected");
+    println!("Client disconnected for session {}", sid);
 }
 
 async fn health() -> &'static str {
     "ok"
 }
 
+async fn session_log(
+    Path(sid): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let maybe = { state.sessions.read().await.get(&sid).cloned() };
+    let Some(sess) = maybe else {
+        return (StatusCode::NOT_FOUND, "session not found").into_response();
+    };
+
+    let log = sess.access_log.lock().await.clone();
+    let mut html = String::from("<!doctype html><meta charset=\"utf-8\"><title>Tunly Session Log</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,\"Helvetica Neue\",Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}th{background:#f7f7f7;text-align:left}code{background:#f3f3f3;padding:2px 4px;border-radius:3px}</style>");
+    html.push_str(&format!("<h1>Session <code>{}</code></h1>", sid));
+    html.push_str(&format!("<p>Quick links: <a href=\"/s/{}/\">/</a> · <a href=\"/s/{}/api\">/api</a> · <a href=\"/s/{}/blog\">/blog</a></p>", sid, sid, sid));
+    html.push_str("<table><thead><tr><th>Method</th><th>URI</th><th>Status</th><th>Duration</th></tr></thead><tbody>");
+    for e in log.iter().rev() { // newest first
+        html.push_str(&format!("<tr><td>{}</td><td><code>{}</code></td><td>{}</td><td>{} ms</td></tr>", escape_html(&e.method), escape_html(&e.uri), e.status, e.dur_ms));
+    }
+    html.push_str("</tbody></table>");
+
+    axum::http::Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header("cache-control", "no-store")
+        .header("x-robots-tag", "noindex, nofollow")
+        .header("referrer-policy", "no-referrer")
+        .body(axum::body::Body::from(html))
+        .unwrap()
+}
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
 async fn proxy_handler(
     State(state): State<Arc<AppState>>,
-    Path(_path): Path<String>,
+    Path(path): Path<String>,
     mut req: Request<axum::body::Body>,
 ) -> Response {
-    // Check if a client is connected
-    let maybe_tx = { state.outbound_tx.read().await.clone() };
-    let Some(tx) = maybe_tx else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "no tunnel client connected").into_response();
+    let start = Instant::now();
+    // Expect path format: s/<session>/<...>
+    let mut parts = path.splitn(3, '/');
+    let prefix = parts.next().unwrap_or("");
+    let sid = parts.next().unwrap_or("");
+    let tail = parts.next().unwrap_or("");
+    if prefix != "s" || sid.is_empty() {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    }
+
+    // Lookup session
+    let maybe_sess = { state.sessions.read().await.get(sid).cloned() };
+    let Some(sess) = maybe_sess else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "no tunnel client for session").into_response();
     };
+
+    // mark activity
+    {
+        let mut ls = sess.last_seen.lock().await;
+        *ls = Instant::now();
+    }
 
     // Build request snapshot
     let id = state.req_id.fetch_add(1, Ordering::SeqCst);
 
     let method = req.method().to_string();
     let uri: Uri = req.uri().clone();
-    let uri_str = uri.to_string();
+    // Build URI for client: "/" + tail + optional ?query
+    let mut uri_str = String::from("/");
+    uri_str.push_str(tail);
+    if let Some(q) = uri.query() { uri_str.push('?'); uri_str.push_str(q); }
 
     let headers_vec = headers_to_vec(req.headers());
 
@@ -213,8 +481,8 @@ async fn proxy_handler(
 
     let proxy_req = ProxyRequest {
         id,
-        method,
-        uri: uri_str,
+        method: method.clone(),
+        uri: uri_str.clone(),
         headers: headers_vec,
         body_b64,
     };
@@ -222,13 +490,13 @@ async fn proxy_handler(
     // Prepare oneshot for the response
     let (resp_tx, resp_rx) = oneshot::channel::<ClientToServer>();
     {
-        let mut pending = state.pending.lock().await;
+        let mut pending = sess.pending.lock().await;
         pending.insert(id, resp_tx);
     }
 
     // Send to client
-    if tx.send(ServerToClient::ProxyRequest(proxy_req)).await.is_err() {
-        let mut pending = state.pending.lock().await;
+    if sess.outbound_tx.send(ServerToClient::ProxyRequest(proxy_req)).await.is_err() {
+        let mut pending = sess.pending.lock().await;
         pending.remove(&id);
         return (StatusCode::BAD_GATEWAY, "failed to send to tunnel client").into_response();
     }
@@ -239,7 +507,7 @@ async fn proxy_handler(
         Ok(Err(_)) => return (StatusCode::BAD_GATEWAY, "tunnel closed").into_response(),
         Err(_) => {
             // Timeout
-            let mut pending = state.pending.lock().await;
+            let mut pending = sess.pending.lock().await;
             pending.remove(&id);
             return (StatusCode::GATEWAY_TIMEOUT, "upstream timeout").into_response();
         }
@@ -257,11 +525,29 @@ async fn proxy_handler(
             builder = builder.header(name, value);
         }
     }
+    // Security/cache headers to reduce leakage
+    builder = builder
+        .header("cache-control", "no-store")
+        .header("x-robots-tag", "noindex, nofollow")
+        .header("referrer-policy", "no-referrer");
+
     let body = match general_purpose::STANDARD_NO_PAD.decode(resp.body_b64.as_bytes()) {
         Ok(b) => b,
         Err(_) => Vec::new(),
     };
-    builder.body(axum::body::Body::from(body)).unwrap().into_response()
+    let response = builder.body(axum::body::Body::from(body)).unwrap().into_response();
+
+    // lightweight logging
+    let dur_ms = start.elapsed().as_millis();
+    {
+        // push to session ring buffer (keep last 50)
+        let mut log = sess.access_log.lock().await;
+        log.push(AccessLogEntry { method: method.clone(), uri: uri_str.clone(), status: response.status().as_u16(), dur_ms });
+        if log.len() > 50 { let drop_n = log.len() - 50; log.drain(0..drop_n); }
+    }
+    println!("PROXY {} {} -> {} in {}ms (sid={})", method, uri_str, response.status().as_u16(), dur_ms, sid);
+
+    response
 }
 
 fn headers_to_vec(headers: &HeaderMap) -> Vec<(String, String)> {

@@ -25,3 +25,4 @@ tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.23", features = ["rustls-tls-native-roots"] }
 thiserror = "1"
 urlencoding = "2"
+rand = "0.8"

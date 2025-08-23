@@ -1,4 +1,4 @@
-use std::{fs, time::Duration};
+use std::{fs, io::{self, Write}, time::{Duration, Instant}};
 
 use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
@@ -6,26 +6,42 @@ use futures::{SinkExt, StreamExt};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{Message, Error as WsError};
+use rand::RngCore;
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+struct TokenSession {
+    token: String,
+    #[serde(default)]
+    session: String,
+    #[serde(default)]
+    expires_in: u64,
+}
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tunly-client", about = "Tunly Client")] 
 struct ClientArgs {
-    /// Remote server host:port, e.g. 1.2.3.4:9000
+    /// Remote server host[:port], default app.tunly.online (backend)
     #[arg(long)]
-    remote_host: String,
+    remote_host: Option<String>,
 
     /// Local target host:port to forward to, e.g. 127.0.0.1:80
     #[arg(long, default_value = "127.0.0.1:80")]
     local: String,
 
-    /// Use secure WebSocket (wss)
-    #[arg(long, default_value_t = false)]
+    /// Use secure WebSocket (wss). Accepts explicit boolean: --use-wss=false
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     use_wss: bool,
 
     /// WebSocket path on server
     #[arg(long, default_value = "/ws")]
     path: String,
+
+    /// Optional: URL to fetch token (JSON {token, session, expires_in} or plain text). Useful for ephemeral tokens, e.g. https://app.tunly.online/token
+    #[arg(long)]
+    token_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -57,35 +73,118 @@ pub struct ProxyResponse {
     pub body_b64: String,
 }
 
+fn generate_session_id() -> String {
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
 #[tokio::main]
 async fn main() {
     let args = ClientArgs::parse();
 
-    let token = load_token().unwrap_or_else(|e| {
-        eprintln!("Failed to load token from config.txt: {}", e);
-        std::process::exit(1);
-    });
-
+    // Resolve remote host and scheme
+    let remote_host = args.remote_host.clone().unwrap_or_else(|| "app.tunly.online".to_string());
     let scheme = if args.use_wss { "wss" } else { "ws" };
-    let token_enc = urlencoding::encode(&token);
     let path = if args.path.starts_with('/') { args.path.clone() } else { format!("/{}", args.path) };
-    let ws_url = format!("{}://{}{}?token={}", scheme, args.remote_host, path, token_enc);
 
-    let local_base = format!("http://{}", args.local);
-    let http = reqwest::Client::builder()
-        .no_gzip()
-        .build()
-        .expect("failed to build http client");
+    // Acquire token/session
+    let mut token_session = if let Some(url) = args.token_url.clone() {
+        match reqwest::get(&url).await {
+            Ok(resp) => match resp.error_for_status() {
+                Ok(ok) => {
+                    let ctype = ok.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                    let bytes = ok.bytes().await.unwrap_or_default();
+                    let body_str = String::from_utf8_lossy(&bytes);
+                    if ctype.contains("application/json") || body_str.trim_start().starts_with('{') {
+                        match serde_json::from_slice::<TokenSession>(&bytes) {
+                            Ok(mut ts) => {
+                                if ts.token.trim().is_empty() { eprintln!("token-url JSON missing token"); std::process::exit(1); }
+                                if ts.session.trim().is_empty() { ts.session = generate_session_id(); }
+                                ts
+                            }
+                            Err(e) => { eprintln!("failed to parse token-url JSON: {}", e); std::process::exit(1); }
+                        }
+                    } else {
+                        let txt = body_str.trim().to_string();
+                        if txt.is_empty() { eprintln!("token-url returned empty body"); std::process::exit(1); }
+                        TokenSession { token: txt, session: generate_session_id(), expires_in: 0 }
+                    }
+                }
+                Err(e) => { eprintln!("token-url error: {}", e); std::process::exit(1); }
+            },
+            Err(e) => { eprintln!("failed to fetch token-url: {}", e); std::process::exit(1); }
+        }
+    } else {
+        // Try env/config; if not found, leave token empty to trigger prompt later
+        match load_token() {
+            Ok(tok) => TokenSession { token: tok, session: generate_session_id(), expires_in: 0 },
+            Err(_) => TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 },
+        }
+    };
 
     let mut attempt: u32 = 0;
+
     loop {
+        // Prompt token if missing
+        if token_session.token.trim().is_empty() {
+            println!("Masukkan token (kalau belum ada, buka https://tunly.online)");
+            print!("token: ");
+            let _ = io::stdout().flush();
+            let mut buf = String::new();
+            if io::stdin().read_line(&mut buf).is_err() { continue; }
+            token_session.token = buf.trim().to_string();
+            if token_session.token.is_empty() { continue; }
+        }
+
+        // Build current ws URL with session
+        let ws_url = format!("{}://{}{}?sid={}", scheme, remote_host, path, token_session.session);
+
         attempt += 1;
         println!("Connecting to {} (attempt #{})...", ws_url, attempt);
+        if attempt == 1 { println!("Kalau belum nyala, sabar ya. Bangunin server dulu ya…"); }
 
-        match tokio_tungstenite::connect_async(&ws_url).await {
+        let mut req = ws_url.clone().into_client_request().expect("failed to build WS request");
+        req.headers_mut().insert("Authorization", format!("Bearer {}", token_session.token).parse().unwrap());
+        match tokio_tungstenite::connect_async(req).await {
             Ok((ws_stream, _resp)) => {
+                // Token valid; ask for local address before starting proxying
+                let default_local = args.local.clone();
+                let input_prompt = format!("Masukkan alamat lokal (default {}): ", default_local);
+                print!("{}", input_prompt);
+                let _ = io::stdout().flush();
+                let mut line = String::new();
+                let _ = io::stdin().read_line(&mut line);
+                let line = line.trim();
+                let local = if line.is_empty() { default_local } else { line.to_string() };
+                let local_base = format!("http://{}", local);
+
+                let http = reqwest::Client::builder().no_gzip().build().expect("failed to build http client");
+
+                let public_http = if scheme == "wss" { format!("https://{}/s/{}/", remote_host, token_session.session) } else { format!("http://{}/s/{}/", remote_host, token_session.session) };
+                println!("Public URL: {}", public_http);
+                if token_session.expires_in > 0 { println!("Note: token expires in ~{}s", token_session.expires_in); }
+
                 println!("Connected. Waiting for requests...");
                 let (mut ws_tx, mut ws_rx) = ws_stream.split();
+
+                // Outbound single-writer task with channel
+                let (out_tx, mut out_rx) = mpsc::channel::<Message>(64);
+                let writer = tokio::spawn(async move {
+                    while let Some(msg) = out_rx.recv().await {
+                        if ws_tx.send(msg).await.is_err() { break; }
+                    }
+                });
+
+                // Heartbeat: ping every 20s via the outbound channel
+                let hb_tx = out_tx.clone();
+                let heartbeat = tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(Duration::from_secs(20));
+                    loop {
+                        interval.tick().await;
+                        if hb_tx.send(Message::Ping(Vec::new())).await.is_err() { break; }
+                    }
+                });
 
                 while let Some(msg_res) = ws_rx.next().await {
                     let msg = match msg_res {
@@ -102,7 +201,7 @@ async fn main() {
                                     let resp_msg = handle_proxy(&http, &local_base, req_msg).await;
                                     let text = serde_json::to_string(&ClientToServer::ProxyResponse(resp_msg))
                                         .expect("serialize response");
-                                    if let Err(e) = ws_tx.send(Message::Text(text)).await {
+                                    if let Err(e) = out_tx.send(Message::Text(text)).await {
                                         eprintln!("Failed to send response over WS: {}", e);
                                         break;
                                     }
@@ -113,7 +212,7 @@ async fn main() {
                             }
                         }
                         Message::Ping(p) => {
-                            let _ = ws_tx.send(Message::Pong(p)).await;
+                            let _ = out_tx.send(Message::Pong(p)).await;
                         }
                         Message::Close(_) => {
                             println!("Server closed connection");
@@ -122,14 +221,39 @@ async fn main() {
                         _ => {}
                     }
                 }
+
+                let _ = heartbeat.abort();
+                let _ = writer.abort();
+
+                // After a disconnect, generate a new session ID for next attempt
+                token_session.session = generate_session_id();
+                // Reset attempts so backoff starts small again
+                attempt = 0;
             }
             Err(e) => {
+                match &e {
+                    WsError::Http(resp) => {
+                        let code = resp.status().as_u16();
+                        if code == 401 || code == 403 {
+                            println!("Token tidak valid atau sudah kadaluarsa.");
+                            println!("Dapatkan token baru di https://tunly.online lalu masukkan lagi.");
+                            token_session.token.clear();
+                            // Reset attempt for fresh start after reprompt
+                            attempt = 0;
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
                 eprintln!("Failed to connect: {}", e);
+                if attempt <= 2 { println!("Sepertinya masih dingin. Nunggu bentar ya…"); }
+                // Exponential backoff before reconnect (max 15s)
+                let backoff = 2u64.saturating_pow(attempt.min(4));
+                sleep(Duration::from_secs(backoff.min(15))).await;
+                // Refresh session for next attempt
+                token_session.session = generate_session_id();
             }
         }
-
-        // Backoff before reconnect
-        sleep(Duration::from_secs(2)).await;
     }
 }
 
@@ -142,6 +266,7 @@ async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRe
     };
 
     let method = req_msg.method.as_str();
+    let start = Instant::now();
 
     let mut builder = http.request(
         reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET),
@@ -183,10 +308,14 @@ async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRe
             let resp_headers = headers_to_vec(resp.headers());
             let bytes = resp.bytes().await.unwrap_or_default();
             let body_b64 = general_purpose::STANDARD_NO_PAD.encode(&bytes);
+            let dur_ms = start.elapsed().as_millis();
+            println!("LOCAL {} {} -> {} in {}ms", method, req_msg.uri, status, dur_ms);
             ProxyResponse { id: req_msg.id, status, headers: resp_headers, body_b64 }
         }
         Err(err) => {
             let msg = format!("upstream error: {}", err);
+            let dur_ms = start.elapsed().as_millis();
+            println!("LOCAL {} {} -> 502 in {}ms ({})", method, req_msg.uri, dur_ms, err);
             ProxyResponse { id: req_msg.id, status: 502, headers: vec![("content-type".into(), "text/plain".into())], body_b64: general_purpose::STANDARD_NO_PAD.encode(msg.as_bytes()) }
         }
     }
