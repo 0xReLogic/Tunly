@@ -3,6 +3,7 @@
 [![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/0xReLogic/Tunly/releases)
+[![Download Client](https://img.shields.io/badge/Download-Client-2ea44f?style=for-the-badge&logo=github)](https://github.com/0xReLogic/Tunly/releases)
 
 **Tunly** is a simple, lightweight, and open-source HTTP tunnel solution inspired by ngrok but without limitations, login requirements, or monthly fees.
 
@@ -72,10 +73,10 @@ Want to test apps on the internet but don't want to use ngrok's complexity?
 
 1. **Download** `tunly-client` for your OS from [Releases](https://github.com/0xReLogic/Tunly/releases)
 2. **Double‑click** `tunly-client` to run
-3. Saat diminta, **buka** `https://tunly.online`, **copy token** yang tampil di UI, lalu **paste** ke client
-4. Masukkan **alamat lokal** saat diminta (default: `127.0.0.1:80`)
-5. Client akan mencetak **Public URL**, contoh: `https://app.tunly.online/s/<session>/` — bagikan URL ini
-6. Cek log sesi: `https://app.tunly.online/s/<session>/_log`
+3. When prompted, open `https://tunly.online`, copy the token shown in the UI, then paste it into the client
+4. Enter your local address when prompted (default: `127.0.0.1:80`)
+5. The client will print your **Public URL**, e.g., `https://app.tunly.online/s/<session>/` — share this URL
+6. View the session log: `https://app.tunly.online/s/<session>/_log`
 
 > Notes:
 > - Long flags use kebab-case (e.g., `--remote-host`, `--token-url`, `--allow-token-query`).
@@ -90,7 +91,7 @@ If building from source:
   ```
   cargo run --bin tunly-client --
   ```
-  Lalu ikuti prompt: paste token dari `https://tunly.online`, masukkan alamat lokal.
+  Then follow the prompts: paste the token from `https://tunly.online` and enter your local address.
 
 - **Self-host (advanced)** — run your own server, then point client to it.
 
@@ -178,16 +179,30 @@ Notes:
 ## Environment & Deploy
 
 - **Server env**:
-  - `PORT` (from platform, e.g., Render) — server listens on this port automatically.
+  - `PORT` (from platform, e.g., Render, Koyeb) — server listens on this port automatically.
   - `TUNLY_TOKEN` — optional; if set, server uses fixed-token mode. If not set and `--token` is not provided, server uses ephemeral mode with `/token` issuance.
 - **Client config**:
   - `config.txt` with `token: <value>` (tolerant to `token=`/`token:`/`tokenn`).
   - Or env `TUNLY_TOKEN`.
   - Or runtime fetch via `--token-url http://<server>:<port>/token` (ephemeral mode).
-- **Render Deploy**:
-  - Use `render.yaml` (Blueprint) or create Web Service with this repo.
-  - Health check path: `/healthz`.
-  - Set `TUNLY_TOKEN` in Render env vars.
+- **Frontend env**:
+  - `BACKEND_BASE_URL` — base URL of your Tunly backend (e.g., `https://<your-app>.koyeb.app` or your custom domain). Used by the Next.js proxy route `app/api/token/route.ts` to call `/token`.
+- **Deploy on Koyeb**:
+  - Source: Docker → Dockerfile path: `backend/Dockerfile`
+  - Health check: `GET /healthz`
+  - Environment:
+    - `TUNLY_TOKEN` (optional): set for Fixed mode; leave empty for Ephemeral mode (`/token` enabled)
+    - `PORT`: injected automatically by Koyeb (no need to set)
+  - Optional: add a custom domain; Koyeb will provision TLS automatically
+
+---
+
+## Security & Limits
+
+- `/token` rate limit: 10 requests per 60 seconds per IP
+- Ephemeral token TTL: ~5 minutes; single use; bound to requester's IP and session id
+- Proxy request body limit: 2 MB
+- Session idle TTL: ~10 minutes (inactive sessions are garbage-collected)
 
 ---
 
@@ -206,9 +221,17 @@ Notes:
   - Shows: Method, URI, Status, Duration (ms)
   - Includes quick links to `/, /api, /blog` for quick checks
 
+## API Endpoints
+
+- `GET /healthz` — health check
+- `GET /token` — issue ephemeral token (available only in Ephemeral mode)
+- `GET /ws?sid=<session>` — WebSocket entrypoint (use `Authorization: Bearer <token>` header)
+- `GET /s/:sid/_log` — recent paths accessed for the session
+- `ANY /s/:sid/<...>` — proxied traffic routed to the connected client
+
 ## Troubleshooting
 
-- **“Token tidak valid atau sudah kadaluarsa.”**
+- **“Token is invalid or has expired.”**
   - Cause: Server is in Ephemeral mode but client used manual token prompt (token doesn’t match `sid`).
   - Fix: Use `--token-url http://<server>:<port>/token`, or run server with a fixed token (`--token <value>`) and then use manual prompt.
 
@@ -224,7 +247,7 @@ Notes:
 
 ---
 
-# Made with ❤️ by ReLogic
+# Made with ❤️ by Allen Elzayn
 
 
 ---

@@ -83,6 +83,8 @@ fn generate_session_id() -> String {
 async fn main() {
     let args = ClientArgs::parse();
 
+    println!("Running Tunly Client. Tekan Ctrl+C untuk keluar.");
+
     // Resolve remote host and scheme
     let remote_host = args.remote_host.clone().unwrap_or_else(|| "app.tunly.online".to_string());
     let scheme = if args.use_wss { "wss" } else { "ws" };
@@ -99,21 +101,37 @@ async fn main() {
                     if ctype.contains("application/json") || body_str.trim_start().starts_with('{') {
                         match serde_json::from_slice::<TokenSession>(&bytes) {
                             Ok(mut ts) => {
-                                if ts.token.trim().is_empty() { eprintln!("token-url JSON missing token"); std::process::exit(1); }
+                                if ts.token.trim().is_empty() {
+                                    eprintln!("token-url JSON missing token, prompting manual token...");
+                                    ts.token = String::new();
+                                }
                                 if ts.session.trim().is_empty() { ts.session = generate_session_id(); }
                                 ts
                             }
-                            Err(e) => { eprintln!("failed to parse token-url JSON: {}", e); std::process::exit(1); }
+                            Err(e) => {
+                                eprintln!("failed to parse token-url JSON: {}. prompting manual token...", e);
+                                TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+                            }
                         }
                     } else {
                         let txt = body_str.trim().to_string();
-                        if txt.is_empty() { eprintln!("token-url returned empty body"); std::process::exit(1); }
-                        TokenSession { token: txt, session: generate_session_id(), expires_in: 0 }
+                        if txt.is_empty() {
+                            eprintln!("token-url returned empty body, prompting manual token...");
+                            TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+                        } else {
+                            TokenSession { token: txt, session: generate_session_id(), expires_in: 0 }
+                        }
                     }
                 }
-                Err(e) => { eprintln!("token-url error: {}", e); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("token-url error: {}. prompting manual token...", e);
+                    TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+                }
             },
-            Err(e) => { eprintln!("failed to fetch token-url: {}", e); std::process::exit(1); }
+            Err(e) => {
+                eprintln!("failed to fetch token-url: {}. prompting manual token...", e);
+                TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+            }
         }
     } else {
         // Try env/config; if not found, leave token empty to trigger prompt later
@@ -166,6 +184,7 @@ async fn main() {
                 if token_session.expires_in > 0 { println!("Note: token expires in ~{}s", token_session.expires_in); }
 
                 println!("Connected. Waiting for requests...");
+                println!("Tekan Ctrl+C untuk keluar.");
                 let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
                 // Outbound single-writer task with channel
