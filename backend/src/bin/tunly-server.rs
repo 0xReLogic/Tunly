@@ -244,6 +244,7 @@ async fn ws_handler(
     let token_ok = match &state.auth_mode {
         AuthMode::Fixed(expected) => token == *expected,
         AuthMode::Ephemeral => {
+            println!("WS_HANDLER Check: IP={}, Headers={:?}", extract_real_ip(&addr, &headers), headers);
             let ip = extract_real_ip(&addr, &headers);
             let mut issued = state.issued_tokens.lock().await;
             if let Some((tok_ip, exp, session)) = issued.get(&token) {
@@ -277,6 +278,7 @@ async fn token_endpoint(
 
     // Rate limiting per IP
     let ip = extract_real_ip(&addr, &headers);
+    println!("TOKEN_ENDPOINT: IP={}, Headers={:?}", ip, headers);
     let now = Instant::now();
     {
         let mut rl = state.rl.lock().await;
