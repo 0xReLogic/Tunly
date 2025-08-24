@@ -476,6 +476,17 @@ async fn proxy_logic(
     println!("-> PROXY_HANDLER: sid='{}', path='{}'", sid, path);
     let start = Instant::now();
 
+    // Prepare request snapshot pieces up front
+    let method = req.method().to_string();
+    let uri: Uri = req.uri().clone();
+    // Build URI for client: "/" + tail + optional ?query
+    let tail = path.trim_start_matches('/');
+    let mut uri_str = if tail.is_empty() { "/".to_string() } else { format!("/{}", tail) };
+    if let Some(query) = uri.query() {
+        uri_str.push('?');
+        uri_str.push_str(query);
+    }
+
     // Lookup session
     let maybe_sess = { state.sessions.read().await.get(&sid).cloned() };
     let Some(sess) = maybe_sess else {
@@ -490,16 +501,6 @@ async fn proxy_logic(
 
     // Build request snapshot
     let id = state.req_id.fetch_add(1, Ordering::SeqCst);
-
-    let method = req.method().to_string();
-    let uri: Uri = req.uri().clone();
-    // Build URI for client: "/" + tail + optional ?query
-    let tail = path.trim_start_matches('/');
-    let mut uri_str = if tail.is_empty() { "/".to_string() } else { format!("/{}", tail) };
-    if let Some(query) = uri.query() {
-        uri_str.push('?');
-        uri_str.push_str(query);
-    }
 
     let headers_vec = headers_to_vec(req.headers());
 
@@ -525,17 +526,41 @@ async fn proxy_logic(
     if sess.outbound_tx.send(ServerToClient::ProxyRequest(proxy_req)).await.is_err() {
         let mut pending = sess.pending.lock().await;
         pending.remove(&id);
+        // log failure
+        let dur_ms = start.elapsed().as_millis();
+        {
+            let mut log = sess.access_log.lock().await;
+            log.push(AccessLogEntry { method: method.clone(), uri: uri_str.clone(), status: StatusCode::BAD_GATEWAY.as_u16(), dur_ms });
+            if log.len() > 50 { let drop_n = log.len() - 50; log.drain(0..drop_n); }
+        }
+        println!("PROXY {} {} -> {} in {}ms (sid={})", method, uri_str, StatusCode::BAD_GATEWAY.as_u16(), dur_ms, sid);
         return (StatusCode::BAD_GATEWAY, "failed to send to tunnel client").into_response();
     }
 
     // Await response with timeout
     let resp = match tokio::time::timeout(std::time::Duration::from_secs(30), resp_rx).await {
         Ok(Ok(ClientToServer::ProxyResponse(r))) => r,
-        Ok(Err(_)) => return (StatusCode::BAD_GATEWAY, "tunnel closed").into_response(),
+        Ok(Err(_)) => {
+            let dur_ms = start.elapsed().as_millis();
+            {
+                let mut log = sess.access_log.lock().await;
+                log.push(AccessLogEntry { method: method.clone(), uri: uri_str.clone(), status: StatusCode::BAD_GATEWAY.as_u16(), dur_ms });
+                if log.len() > 50 { let drop_n = log.len() - 50; log.drain(0..drop_n); }
+            }
+            println!("PROXY {} {} -> {} in {}ms (sid={})", method, uri_str, StatusCode::BAD_GATEWAY.as_u16(), dur_ms, sid);
+            return (StatusCode::BAD_GATEWAY, "tunnel closed").into_response();
+        }
         Err(_) => {
             // Timeout
             let mut pending = sess.pending.lock().await;
             pending.remove(&id);
+            let dur_ms = start.elapsed().as_millis();
+            {
+                let mut log = sess.access_log.lock().await;
+                log.push(AccessLogEntry { method: method.clone(), uri: uri_str.clone(), status: StatusCode::GATEWAY_TIMEOUT.as_u16(), dur_ms });
+                if log.len() > 50 { let drop_n = log.len() - 50; log.drain(0..drop_n); }
+            }
+            println!("PROXY {} {} -> {} in {}ms (sid={})", method, uri_str, StatusCode::GATEWAY_TIMEOUT.as_u16(), dur_ms, sid);
             return (StatusCode::GATEWAY_TIMEOUT, "upstream timeout").into_response();
         }
     };
