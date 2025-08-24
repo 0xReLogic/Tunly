@@ -145,8 +145,10 @@ async fn main() {
         .route("/token", get(token_endpoint))
         .route("/healthz", get(health))
         .route("/s/:sid/_log", get(session_log))
+        .route("/s/:sid/", any(proxy_handler_root))
         .route("/s/:sid", any(proxy_handler_root))
         .route("/s/:sid/*path", any(proxy_handler_path))
+        .fallback(fallback_404)
         .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(TraceLayer::new_for_http())
                 .with_state(state.clone());
@@ -573,21 +575,35 @@ async fn proxy_logic(
 
         // Rewrite relative Location headers to stay under /s/:sid/
         if k.eq_ignore_ascii_case("location") {
-            // Only rewrite if it's an absolute-path reference beginning with '/'
+            // Absolute-path Location: rewrite under /s/:sid/
             if v.starts_with('/') {
-                // Avoid double prefix if it already targets this session
-                let new_loc = if v.starts_with(&format!("/s/{}/", sid)) {
-                    v.clone()
-                } else {
-                    format!("/s/{}/{}", sid, v.trim_start_matches('/'))
-                };
+                let new_loc = if v.starts_with(&format!("/s/{}/", sid)) { v.clone() } else { format!("/s/{}/{}", sid, v.trim_start_matches('/')) };
                 if let (Ok(name), Ok(value)) = (
                     axum::http::header::HeaderName::from_bytes(k.as_bytes()),
                     axum::http::HeaderValue::from_str(&new_loc),
-                ) {
-                    builder = builder.header(name, value);
-                }
+                ) { builder = builder.header(name, value); }
                 continue;
+            }
+            // Absolute-URL Location (http/https): strip scheme+host and rewrite path+query under /s/:sid/
+            let lower = v.to_ascii_lowercase();
+            if lower.starts_with("http://") || lower.starts_with("https://") {
+                if let Some(scheme_idx) = v.find("://") {
+                    let after_scheme = scheme_idx + 3;
+                    if let Some(path_rel_idx) = v[after_scheme..].find('/') {
+                        let path_start = after_scheme + path_rel_idx; // index of '/'
+                        let path_q = &v[path_start..]; // includes leading '/'
+                        let new_loc = if path_q.starts_with(&format!("/s/{}/", sid)) {
+                            path_q.to_string()
+                        } else {
+                            format!("/s/{}/{}", sid, path_q.trim_start_matches('/'))
+                        };
+                        if let (Ok(name), Ok(value)) = (
+                            axum::http::header::HeaderName::from_bytes(k.as_bytes()),
+                            axum::http::HeaderValue::from_str(&new_loc),
+                        ) { builder = builder.header(name, value); }
+                        continue;
+                    }
+                }
             }
         }
 
@@ -638,4 +654,15 @@ fn is_hop_by_hop(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "connection" | "keep-alive" | "proxy-authenticate" | "proxy-authorization" | "te" | "trailers" | "transfer-encoding" | "upgrade"
     )
+}
+
+// Fallback for unmatched routes: return 404 and include the requested URI for visibility
+async fn fallback_404(uri: Uri) -> Response {
+    let body = format!("not found: {}", uri);
+    axum::http::Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .header("cache-control", "no-store")
+        .body(axum::body::Body::from(body))
+        .unwrap()
+        .into_response()
 }
