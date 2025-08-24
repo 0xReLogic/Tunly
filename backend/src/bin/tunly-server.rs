@@ -12,7 +12,6 @@ use axum::{
     Router,
 };
 use tower_http::trace::TraceLayer;
-use tower_http::forwarded::ForwardedHeader;
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -146,8 +145,8 @@ async fn main() {
         .route("/healthz", get(health))
         .route("/s/:sid/_log", get(session_log))
         .route("/*path", any(proxy_handler))
-        .layer(ForwardedHeader::trust_always())
-        .with_state(state.clone());
+        .layer(TraceLayer::new_for_http())
+                .with_state(state.clone());
 
     // Background GC: periodically prune expired ephemeral tokens
     {
@@ -222,6 +221,7 @@ fn extract_real_ip(addr: &SocketAddr, headers: &HeaderMap) -> String {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| addr.ip().to_string())
 }
+
 
 async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
