@@ -144,6 +144,7 @@ async fn main() {
         .route("/ws", get(ws_handler))
         .route("/token", get(token_endpoint))
         .route("/healthz", get(health))
+        .route("/_next/*path", any(next_asset_redirect))
         .route("/s/:sid/_log", get(session_log))
         .route("/s/:sid/", any(proxy_handler_root))
         .route("/s/:sid", any(proxy_handler_root))
@@ -339,7 +340,7 @@ async fn token_endpoint(
         .header(axum::http::header::CONTENT_TYPE, "application/json")
         .header("cache-control", "no-store")
         .header("x-robots-tag", "noindex, nofollow")
-        .header("referrer-policy", "no-referrer")
+        .header("referrer-policy", "same-origin")
         .body(axum::body::Body::from(body))
         .unwrap()
 }
@@ -444,7 +445,7 @@ async fn session_log(
         .header(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")
         .header("cache-control", "no-store")
         .header("x-robots-tag", "noindex, nofollow")
-        .header("referrer-policy", "no-referrer")
+        .header("referrer-policy", "same-origin")
         .body(axum::body::Body::from(html))
         .unwrap()
 }
@@ -618,7 +619,11 @@ async fn proxy_logic(
     builder = builder
         .header("cache-control", "no-store")
         .header("x-robots-tag", "noindex, nofollow")
-        .header("referrer-policy", "no-referrer");
+        .header("referrer-policy", "same-origin");
+    // Persist session id to a cookie for asset routing (/_next/* -> /s/:sid/_next/*)
+    if let Ok(cv) = axum::http::HeaderValue::from_str(&format!("tunly_sid={}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax", sid)) {
+        builder = builder.header(axum::http::header::SET_COOKIE, cv);
+    }
 
     let body = match general_purpose::STANDARD_NO_PAD.decode(resp.body_b64.as_bytes()) {
         Ok(b) => b,
@@ -654,6 +659,72 @@ fn is_hop_by_hop(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "connection" | "keep-alive" | "proxy-authenticate" | "proxy-authorization" | "te" | "trailers" | "transfer-encoding" | "upgrade"
     )
+}
+
+// Redirect root Next.js asset requests (/_next/*) to the prefixed session path (/s/:sid/_next/*)
+// We infer the session id preferring Referer (so multiple sessions work), then cookie.
+async fn next_asset_redirect(
+    Path(path): Path<String>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
+    let qs = uri
+        .query()
+        .map(|q| {
+            let mut s = String::from("?");
+            s.push_str(q);
+            s
+        })
+        .unwrap_or_default();
+    // 1) Prefer Referer: derive from path like https://host/s/<sid>/...
+    if let Some(ref_val) = headers.get(axum::http::header::REFERER).and_then(|v| v.to_str().ok()) {
+        if let Some(sid) = sid_from_referer(ref_val) {
+            let new_loc = format!("/s/{}/_next/{}{}", sid, path, qs);
+            let hv = axum::http::HeaderValue::from_str(&new_loc).unwrap_or(axum::http::HeaderValue::from_static("/"));
+            return axum::http::Response::builder()
+                .status(StatusCode::TEMPORARY_REDIRECT)
+                .header(axum::http::header::LOCATION, hv)
+                .header("cache-control", "no-store")
+                .body(axum::body::Body::empty())
+                .unwrap()
+                .into_response();
+        }
+    }
+    // 2) Fallback to cookie
+    if let Some(sid) = cookie_value(&headers, "tunly_sid") {
+        let new_loc = format!("/s/{}/_next/{}{}", sid, path, qs);
+        let hv = axum::http::HeaderValue::from_str(&new_loc).unwrap_or(axum::http::HeaderValue::from_static("/"));
+        return axum::http::Response::builder()
+            .status(StatusCode::TEMPORARY_REDIRECT)
+            .header(axum::http::header::LOCATION, hv)
+            .header("cache-control", "no-store")
+            .body(axum::body::Body::empty())
+            .unwrap()
+            .into_response();
+    }
+    (StatusCode::NOT_FOUND, "not found: /_next/* (no session context)").into_response()
+}
+
+fn sid_from_referer(referer: &str) -> Option<String> {
+    // look for "/s/" then capture until next '/'
+    if let Some(idx) = referer.find("/s/") {
+        let after = &referer[idx + 3..];
+        let end = after.find('/').unwrap_or(after.len());
+        let sid = &after[..end];
+        if !sid.is_empty() { return Some(sid.to_string()); }
+    }
+    None
+}
+
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    let raw = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+    for part in raw.split(';') {
+        let kv = part.trim();
+        if let Some(val) = kv.strip_prefix(&format!("{}=", name)) {
+            return Some(val.to_string());
+        }
+    }
+    None
 }
 
 // Fallback for unmatched routes: return 404 and include the requested URI for visibility
