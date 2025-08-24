@@ -144,7 +144,7 @@ async fn main() {
         .route("/token", get(token_endpoint))
         .route("/healthz", get(health))
         .route("/s/:sid/_log", get(session_log))
-        .route("/*path", any(proxy_handler))
+        .route("/s/:sid/*path", any(proxy_handler))
         .layer(TraceLayer::new_for_http())
                 .with_state(state.clone());
 
@@ -449,22 +449,14 @@ fn escape_html(s: &str) -> String {
 }
 
 async fn proxy_handler(
+    Path((sid, path)): Path<(String, String)>,
     State(state): State<Arc<AppState>>,
-    Path(path): Path<String>,
-    mut req: Request<axum::body::Body>,
+    req: Request<axum::body::Body>,
 ) -> Response {
     let start = Instant::now();
-    // Expect path format: s/<session>/<...>
-    let mut parts = path.splitn(3, '/');
-    let prefix = parts.next().unwrap_or("");
-    let sid = parts.next().unwrap_or("");
-    let tail = parts.next().unwrap_or("");
-    if prefix != "s" || sid.is_empty() {
-        return (StatusCode::NOT_FOUND, "not found").into_response();
-    }
 
     // Lookup session
-    let maybe_sess = { state.sessions.read().await.get(sid).cloned() };
+    let maybe_sess = { state.sessions.read().await.get(&sid).cloned() };
     let Some(sess) = maybe_sess else {
         return (StatusCode::SERVICE_UNAVAILABLE, "no tunnel client for session").into_response();
     };
@@ -481,7 +473,7 @@ async fn proxy_handler(
     let method = req.method().to_string();
     let uri: Uri = req.uri().clone();
     // Build URI for client: "/" + tail + optional ?query
-    let mut uri_str = format!("/{}", tail);
+    let mut uri_str = format!("/{}", path);
     if let Some(query) = uri.query() {
         uri_str.push('?');
         uri_str.push_str(query);
