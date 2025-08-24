@@ -1,6 +1,13 @@
 # ---------- Builder stage ----------
 FROM rust:1-slim AS builder
 WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 # Pre-copy manifest to leverage Docker layer caching
 # NOTE: Build context is the repository root on Koyeb. Since this Dockerfile
@@ -15,7 +22,12 @@ RUN cargo build --release --locked --bin tunly-server
 FROM debian:bookworm-slim AS runtime
 
 # Minimal runtime deps
-RUN useradd -m -u 10001 appuser
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssl \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd -m -u 10001 appuser
 WORKDIR /app
 
 # Copy binary
