@@ -453,6 +453,7 @@ async fn proxy_handler(
     State(state): State<Arc<AppState>>,
     req: Request<axum::body::Body>,
 ) -> Response {
+    println!("-> PROXY_HANDLER: sid='{}', path='{}'", sid, path);
     let start = Instant::now();
 
     // Lookup session
