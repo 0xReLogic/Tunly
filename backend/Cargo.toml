@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2021"
 autobins = false
 
-[[bin]]
-name = "tunly-server"
-path = "src/bin/tunly-server.rs"
 
 [[bin]]
 name = "tunly-client"
@@ -14,6 +11,7 @@ path = "src/bin/tunly-client.rs"
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["trace", "forwarded"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 futures = "0.3"
@@ -26,3 +24,4 @@ tokio-tungstenite = { version = "0.23", features = ["rustls-tls-native-roots"] }
 thiserror = "1"
 urlencoding = "2"
 rand = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }

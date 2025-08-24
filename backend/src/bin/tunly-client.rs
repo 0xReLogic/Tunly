@@ -14,7 +14,8 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 struct TokenSession {
     token: String,
-    #[serde(default)]
+    // Accept both `session` and `sid` keys from the token endpoint
+    #[serde(default, alias = "sid")]
     session: String,
     #[serde(default)]
     expires_in: u64,
@@ -82,6 +83,8 @@ fn generate_session_id() -> String {
 #[tokio::main]
 async fn main() {
     let args = ClientArgs::parse();
+    // Initialize Rustls crypto provider (required for rustls 0.23 when using ring)
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     println!("Running Tunly Client. Tekan Ctrl+C untuk keluar.");
 
@@ -144,15 +147,57 @@ async fn main() {
     let mut attempt: u32 = 0;
 
     loop {
-        // Prompt token if missing
+        // If token missing, try auto-fetch from token-url first (Ephemeral mode)
         if token_session.token.trim().is_empty() {
-            println!("Masukkan token (kalau belum ada, buka https://tunly.online)");
-            print!("token: ");
-            let _ = io::stdout().flush();
-            let mut buf = String::new();
-            if io::stdin().read_line(&mut buf).is_err() { continue; }
-            token_session.token = buf.trim().to_string();
-            if token_session.token.is_empty() { continue; }
+            if let Some(url) = args.token_url.clone() {
+                match reqwest::get(&url).await {
+                    Ok(resp) => match resp.error_for_status() {
+                        Ok(ok) => {
+                            let ctype = ok.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                            let bytes = ok.bytes().await.unwrap_or_default();
+                            let body_str = String::from_utf8_lossy(&bytes);
+                            if ctype.contains("application/json") || body_str.trim_start().starts_with('{') {
+                                if let Ok(mut ts) = serde_json::from_slice::<TokenSession>(&bytes) {
+                                    if !ts.token.trim().is_empty() {
+                                        if ts.session.trim().is_empty() { ts.session = generate_session_id(); }
+                                        token_session = ts;
+                                        // proceed to connect with freshly fetched token
+                                        // (skip manual prompt)
+                                    } else {
+                                        eprintln!("token-url JSON missing token, falling back to manual prompt...");
+                                    }
+                                } else {
+                                    eprintln!("failed to parse token-url JSON, falling back to manual prompt...");
+                                }
+                            } else {
+                                let txt = body_str.trim().to_string();
+                                if !txt.is_empty() {
+                                    token_session.token = txt;
+                                    if token_session.session.trim().is_empty() { token_session.session = generate_session_id(); }
+                                } else {
+                                    eprintln!("token-url returned empty body, falling back to manual prompt...");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("token-url error: {}. falling back to manual prompt...", e);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("failed to fetch token-url: {}. falling back to manual prompt...", e);
+                    }
+                }
+            }
+
+            if token_session.token.trim().is_empty() {
+                println!("Masukkan token (kalau belum ada, buka https://{})", remote_host);
+                print!("token: ");
+                let _ = io::stdout().flush();
+                let mut buf = String::new();
+                if io::stdin().read_line(&mut buf).is_err() { continue; }
+                token_session.token = buf.trim().to_string();
+                if token_session.token.is_empty() { continue; }
+            }
         }
 
         // Build current ws URL with session
@@ -255,7 +300,7 @@ async fn main() {
                         let code = resp.status().as_u16();
                         if code == 401 || code == 403 {
                             println!("Token tidak valid atau sudah kadaluarsa.");
-                            println!("Dapatkan token baru di https://tunly.online lalu masukkan lagi.");
+                            println!("Dapatkan token baru di https://{} lalu masukkan lagi.", remote_host);
                             token_session.token.clear();
                             // Reset attempt for fresh start after reprompt
                             attempt = 0;

@@ -11,6 +11,8 @@ use axum::{
     routing::{any, get},
     Router,
 };
+use tower_http::trace::TraceLayer;
+use tower_http::forwarded::ForwardedHeader;
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -144,6 +146,7 @@ async fn main() {
         .route("/healthz", get(health))
         .route("/s/:sid/_log", get(session_log))
         .route("/*path", any(proxy_handler))
+        .layer(ForwardedHeader::trust_always())
         .with_state(state.clone());
 
     // Background GC: periodically prune expired ephemeral tokens
@@ -211,6 +214,15 @@ async fn main() {
     axum::serve(listener, svc).await.unwrap();
 }
 
+fn extract_real_ip(addr: &SocketAddr, headers: &HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| addr.ip().to_string())
+}
+
 async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
@@ -232,7 +244,7 @@ async fn ws_handler(
     let token_ok = match &state.auth_mode {
         AuthMode::Fixed(expected) => token == *expected,
         AuthMode::Ephemeral => {
-            let ip = addr.ip().to_string();
+            let ip = extract_real_ip(&addr, &headers);
             let mut issued = state.issued_tokens.lock().await;
             if let Some((tok_ip, exp, session)) = issued.get(&token) {
                 if *tok_ip == ip && *exp > Instant::now() && *session == sid {
@@ -253,6 +265,7 @@ async fn ws_handler(
 async fn token_endpoint(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
 ) -> Response {
     // Only available in Ephemeral mode
     match &state.auth_mode {
@@ -263,7 +276,7 @@ async fn token_endpoint(
     }
 
     // Rate limiting per IP
-    let ip = addr.ip().to_string();
+    let ip = extract_real_ip(&addr, &headers);
     let now = Instant::now();
     {
         let mut rl = state.rl.lock().await;
