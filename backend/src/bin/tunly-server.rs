@@ -545,6 +545,27 @@ async fn proxy_logic(
     for (k, v) in resp.headers.iter() {
         // Skip hop-by-hop headers
         if is_hop_by_hop(k) { continue; }
+
+        // Rewrite relative Location headers to stay under /s/:sid/
+        if k.eq_ignore_ascii_case("location") {
+            // Only rewrite if it's an absolute-path reference beginning with '/'
+            if v.starts_with('/') {
+                // Avoid double prefix if it already targets this session
+                let new_loc = if v.starts_with(&format!("/s/{}/", sid)) {
+                    v.clone()
+                } else {
+                    format!("/s/{}/{}", sid, v.trim_start_matches('/'))
+                };
+                if let (Ok(name), Ok(value)) = (
+                    axum::http::header::HeaderName::from_bytes(k.as_bytes()),
+                    axum::http::HeaderValue::from_str(&new_loc),
+                ) {
+                    builder = builder.header(name, value);
+                }
+                continue;
+            }
+        }
+
         if let (Ok(name), Ok(value)) = (
             axum::http::header::HeaderName::from_bytes(k.as_bytes()),
             axum::http::HeaderValue::from_str(v),
