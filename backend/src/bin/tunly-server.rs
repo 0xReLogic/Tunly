@@ -454,7 +454,7 @@ async fn proxy_handler_root(
     State(state): State<Arc<AppState>>,
     req: Request<axum::body::Body>,
 ) -> Response {
-    proxy_logic(State(state), sid, "".to_string(), req).await
+    proxy_logic(State(state), sid, "home".to_string(), req).await
 }
 
 async fn proxy_handler_path(
