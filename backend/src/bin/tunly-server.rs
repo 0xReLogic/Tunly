@@ -481,17 +481,15 @@ async fn proxy_handler(
     let method = req.method().to_string();
     let uri: Uri = req.uri().clone();
     // Build URI for client: "/" + tail + optional ?query
-    let mut uri_str = String::from("/");
-    uri_str.push_str(tail);
-    if let Some(q) = uri.query() { uri_str.push('?'); uri_str.push_str(q); }
+    let mut uri_str = format!("/{}", tail);
+    if let Some(query) = uri.query() {
+        uri_str.push('?');
+        uri_str.push_str(query);
+    }
 
     let headers_vec = headers_to_vec(req.headers());
 
-    let body_owned = std::mem::take(req.body_mut());
-    let body_bytes = match axum::body::to_bytes(body_owned, 2 * 1024 * 1024).await { // 2MB limit
-        Ok(b) => b,
-        Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "body too large").into_response(),
-    };
+    let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX).await.unwrap_or_default();
     let body_b64 = general_purpose::STANDARD_NO_PAD.encode(&body_bytes);
 
     let proxy_req = ProxyRequest {

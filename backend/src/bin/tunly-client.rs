@@ -108,45 +108,49 @@ async fn main() {
                                     eprintln!("token-url JSON missing token, prompting manual token...");
                                     ts.token = String::new();
                                 }
-                                if ts.session.trim().is_empty() { ts.session = generate_session_id(); }
                                 ts
                             }
                             Err(e) => {
                                 eprintln!("failed to parse token-url JSON: {}. prompting manual token...", e);
-                                TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+                                TokenSession::default()
                             }
                         }
                     } else {
                         let txt = body_str.trim().to_string();
                         if txt.is_empty() {
                             eprintln!("token-url returned empty body, prompting manual token...");
-                            TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+                            TokenSession::default()
                         } else {
-                            TokenSession { token: txt, session: generate_session_id(), expires_in: 0 }
+                            TokenSession { token: txt, ..Default::default() }
                         }
                     }
                 }
                 Err(e) => {
                     eprintln!("token-url error: {}. prompting manual token...", e);
-                    TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+                    TokenSession::default()
                 }
             },
             Err(e) => {
                 eprintln!("failed to fetch token-url: {}. prompting manual token...", e);
-                TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 }
+                TokenSession::default()
             }
         }
     } else {
         // Try env/config; if not found, leave token empty to trigger prompt later
         match load_token() {
-            Ok(tok) => TokenSession { token: tok, session: generate_session_id(), expires_in: 0 },
-            Err(_) => TokenSession { token: String::new(), session: generate_session_id(), expires_in: 0 },
+            Ok(tok) => TokenSession { token: tok, ..Default::default() },
+            Err(_) => TokenSession::default(),
         }
     };
 
     let mut attempt: u32 = 0;
 
     loop {
+        // If session is still missing (e.g. manual token), generate one now.
+        if token_session.session.trim().is_empty() {
+            token_session.session = generate_session_id();
+        }
+
         // If token missing, try auto-fetch from token-url first (Ephemeral mode)
         if token_session.token.trim().is_empty() {
             if let Some(url) = args.token_url.clone() {
@@ -159,7 +163,6 @@ async fn main() {
                             if ctype.contains("application/json") || body_str.trim_start().starts_with('{') {
                                 if let Ok(mut ts) = serde_json::from_slice::<TokenSession>(&bytes) {
                                     if !ts.token.trim().is_empty() {
-                                        if ts.session.trim().is_empty() { ts.session = generate_session_id(); }
                                         token_session = ts;
                                         // proceed to connect with freshly fetched token
                                         // (skip manual prompt)
@@ -173,8 +176,7 @@ async fn main() {
                                 let txt = body_str.trim().to_string();
                                 if !txt.is_empty() {
                                     token_session.token = txt;
-                                    if token_session.session.trim().is_empty() { token_session.session = generate_session_id(); }
-                                } else {
+                                                                    } else {
                                     eprintln!("token-url returned empty body, falling back to manual prompt...");
                                 }
                             }
@@ -343,7 +345,10 @@ async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRe
         if is_hop_by_hop(k) { continue; }
         if k.eq_ignore_ascii_case("host") {
             // Rewrite host to local target
-            if let Ok(val) = HeaderValue::from_str(local_base.trim_start_matches("http://").trim_start_matches("https://")) {
+                        let local_host = local_base.trim_start_matches("http://").trim_start_matches("https://");
+            let host_parts: Vec<&str> = local_host.split(':').collect();
+            let port = host_parts.get(1).unwrap_or(&"80");
+            if let Ok(val) = HeaderValue::from_str(&format!("localhost:{}", port)) {
                 headers.insert(HeaderName::from_static("host"), val);
             }
             continue;
