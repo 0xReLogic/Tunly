@@ -144,6 +144,7 @@ async fn main() {
         .route("/token", get(token_endpoint))
         .route("/healthz", get(health))
         .route("/s/:sid/_log", get(session_log))
+        .route("/s/:sid", any(proxy_handler))
         .route("/s/:sid/*path", any(proxy_handler))
         .layer(TraceLayer::new_for_http())
                 .with_state(state.clone());
@@ -449,10 +450,11 @@ fn escape_html(s: &str) -> String {
 }
 
 async fn proxy_handler(
-    Path((sid, path)): Path<(String, String)>,
+    Path((sid, path_opt)): Path<(String, Option<String>)>,
     State(state): State<Arc<AppState>>,
     req: Request<axum::body::Body>,
 ) -> Response {
+    let path = path_opt.unwrap_or_default();
     println!("-> PROXY_HANDLER: sid='{}', path='{}'", sid, path);
     let start = Instant::now();
 
