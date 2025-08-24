@@ -161,7 +161,7 @@ async fn main() {
                             let bytes = ok.bytes().await.unwrap_or_default();
                             let body_str = String::from_utf8_lossy(&bytes);
                             if ctype.contains("application/json") || body_str.trim_start().starts_with('{') {
-                                if let Ok(mut ts) = serde_json::from_slice::<TokenSession>(&bytes) {
+                                if let Ok(ts) = serde_json::from_slice::<TokenSession>(&bytes) {
                                     if !ts.token.trim().is_empty() {
                                         token_session = ts;
                                         // proceed to connect with freshly fetched token
