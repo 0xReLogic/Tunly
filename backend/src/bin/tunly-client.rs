@@ -324,6 +324,7 @@ async fn main() {
 }
 
 async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRequest) -> ProxyResponse {
+    println!("-> CLIENT received proxy request for URI: {}", &req_msg.uri);
     // Build URL to local server
     let url = if req_msg.uri.starts_with('/') {
         format!("{}{}", local_base, req_msg.uri)
