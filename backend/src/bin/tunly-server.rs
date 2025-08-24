@@ -33,8 +33,8 @@ struct ServerArgs {
     #[arg(long, default_value = "0.0.0.0")]
     host: String,
 
-    /// Port to bind, e.g. 9000
-    #[arg(long, env = "PORT", default_value_t = 9000)]
+    /// Port to bind, e.g. 8080
+    #[arg(long, env = "PORT", default_value_t = 8080)]
     port: u16,
 
     /// Legacy combined bind (overrides host/port if provided), e.g. 0.0.0.0:9000
