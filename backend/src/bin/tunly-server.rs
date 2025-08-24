@@ -12,6 +12,7 @@ use axum::{
     Router,
 };
 use tower_http::trace::TraceLayer;
+use tower_http::normalize_path::NormalizePathLayer;
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -146,6 +147,7 @@ async fn main() {
         .route("/s/:sid/_log", get(session_log))
         .route("/s/:sid", any(proxy_handler_root))
         .route("/s/:sid/*path", any(proxy_handler_path))
+        .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(TraceLayer::new_for_http())
                 .with_state(state.clone());
 
@@ -454,7 +456,7 @@ async fn proxy_handler_root(
     State(state): State<Arc<AppState>>,
     req: Request<axum::body::Body>,
 ) -> Response {
-    proxy_logic(State(state), sid, "/".to_string(), req).await
+    proxy_logic(State(state), sid, "".to_string(), req).await
 }
 
 async fn proxy_handler_path(
@@ -492,7 +494,8 @@ async fn proxy_logic(
     let method = req.method().to_string();
     let uri: Uri = req.uri().clone();
     // Build URI for client: "/" + tail + optional ?query
-    let mut uri_str = format!("/{}", path);
+    let tail = path.trim_start_matches('/');
+    let mut uri_str = if tail.is_empty() { "/".to_string() } else { format!("/{}", tail) };
     if let Some(query) = uri.query() {
         uri_str.push('?');
         uri_str.push_str(query);

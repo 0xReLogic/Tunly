@@ -15,7 +15,7 @@ path = "src/bin/tunly-server.rs"
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.5", features = ["trace"] }
+tower-http = { version = "0.5", features = ["trace", "normalize-path"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 futures = "0.3"
