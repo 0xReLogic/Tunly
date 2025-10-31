@@ -1,0 +1,9 @@
+# Override GitHub language detection
+# Exclude frontend files from language statistics
+frontend/** linguist-vendored
+frontend/.next/** linguist-generated
+frontend/node_modules/** linguist-vendored
+
+# Mark Rust as the primary language
+*.rs linguist-detectable=true
+*.toml linguist-detectable=true
