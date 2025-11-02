@@ -6,14 +6,6 @@ autobins = false
 
 
 [[bin]]
-name = "tunly-client"
-path = "src/bin/tunly-client.rs"
-
-[[bin]]
-name = "tunly-server"
-path = "src/bin/tunly-server.rs"
-
-[[bin]]
 name = "tunly-moq-client"
 path = "src/bin/tunly-moq-client.rs"
 
