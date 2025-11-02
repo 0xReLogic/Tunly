@@ -37,3 +37,9 @@ thiserror = "1"
 urlencoding = "2"
 rand = "0.8"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+http = "1"
+async-trait = "0.1"
+url = "2"
+moq-native = { git = "https://github.com/kixelated/moq", package = "moq-native" }
+moq-lite = { git = "https://github.com/kixelated/moq", package = "moq-lite" }

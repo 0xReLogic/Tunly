@@ -1,6 +1,7 @@
 use clap::Parser;
+use tunly::moq::transport::MoqTransport;
 use tunly::moq::bridge::RequestEnvelope;
-use tunly::moq::transport::{MoqTransport, NullMoq};
+use tunly::moq::transport::{MoqTailTransport, NullMoq};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "tunly-moq-client", about = "Tunly MoQ Client POC")]
@@ -14,12 +15,17 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
 
-    let mut transport = NullMoq::new();
+    // Only connect to MoQ when remote is provided; otherwise keep as no-op
     if let Some(ref r) = args.remote {
-        transport.connect(r, args.token.clone())?;
+        let mut transport = MoqTailTransport::new()?;
+        transport.connect(r, args.token.clone()).await?;
+        let _ = transport; // placeholder until real HTTP bridge wiring
+    } else {
+        let _noop = NullMoq::new();
+        let _ = _noop;
     }
 
     let _sample = RequestEnvelope {
