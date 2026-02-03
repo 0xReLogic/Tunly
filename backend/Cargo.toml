@@ -25,7 +25,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
-thiserror = "1"
+thiserror = "2"
 urlencoding = "2"
 rand = "0.8"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
