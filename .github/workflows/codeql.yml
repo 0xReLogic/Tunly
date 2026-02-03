@@ -30,7 +30,7 @@ jobs:
         components: clippy
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v4
       with:
         languages: rust
         queries: security-extended,security-and-quality
@@ -40,7 +40,7 @@ jobs:
       run: cargo build --release --all-targets
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v4
       with:
         category: "/language:rust"
 
@@ -65,7 +65,7 @@ jobs:
         cache-dependency-path: frontend/package-lock.json
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v4
       with:
         languages: javascript-typescript
         queries: security-extended,security-and-quality
@@ -79,6 +79,6 @@ jobs:
       run: npm run build
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v4
       with:
         category: "/language:javascript-typescript"
