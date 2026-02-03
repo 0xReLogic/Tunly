@@ -12,20 +12,20 @@
     "@emotion/cache": "^11.11.0",
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
-    "@mui/material": "^6.1.6",
+    "@mui/material": "^7.3.7",
     "@mui/icons-material": "^6.1.6",
-    "next": "14.2.5",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "next": "16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/node": "^25",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "eslint": "^8",
-    "eslint-config-next": "14.2.5",
+    "eslint-config-next": "16.1.6",
     "postcss": "^8",
-    "tailwindcss": "^4.0.0",
+    "tailwindcss": "^4.1.18",
     "typescript": "^5"
   }
 }
