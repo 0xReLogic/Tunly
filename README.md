@@ -10,19 +10,18 @@
 [![Frontend CI](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml)
 [![Release](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml)
 
-**Tunly** is a simple, lightweight, and open-source HTTP tunnel solution inspired by ngrok but without limitations, login requirements, or monthly fees.
+**Tunly** is a simple, lightweight, and open-source HTTP tunnel solution for exposing local applications to the internet.
 
 ---
 
 ## Motivation
 
-Many tunnel services like ngrok limit users with quotas, login requirements, or subscription fees.  
-**Tunly** is here for developers, makers, and anyone who wants:
+**Tunly** is built for developers, makers, and anyone who wants:
 
 - **Access local applications from anywhere** without hassle
 - **No login, no dashboard, no limits**
 - **100% open source** and self-hostable
-- **Easy distribution**: double‑click, paste token, and use immediately
+- **Easy distribution**: simple setup with token-based authentication
 
 ---
 
@@ -30,8 +29,8 @@ Many tunnel services like ngrok limit users with quotas, login requirements, or 
 
 - No login, no dashboard
 - Unlimited tunnels (as long as your server is running)
-- Double‑click UX: prompt token (get it from `https://tunly.online`), then prompt local address, then Tunly prints your Public URL
-- Simple authentication: paste token when prompted; advanced users can still use `config.txt`/ENV flags
+- Simple UX: enter token and local address, get your public URL instantly
+- Token-based authentication: secure and flexible
 - Can run on VPS, cloud, or locally (self-host)
 - Lightweight: pure binary, no complex dependencies
 - No telemetry, no tracking, no nonsense
@@ -63,25 +62,32 @@ Have a new idea, want to share with friends but haven't deployed yet?
 **Solution**: Tunnel localhost, share URL, friends can try immediately.
 
 ### **Private Testing**
-Want to test apps on the internet but don't want to use ngrok's complexity?  
-**Solution**: Tunly = ngrok without login, without limits, without hassle.
+Want to test apps on the internet without complex setup?  
+**Solution**: Tunly provides simple, self-hosted tunneling without hassle.
 
 ---
 
 ## How to Use
 
 ### Modes
-- **Hosted (recommended)**: Use our backend at `app.tunly.online` and landing page at `tunly.online` to get tokens.
-- **Self-host (advanced)**: Run your own server and point the client to it.
+- **Self-host**: Run your own server on a VPS or cloud platform and point the client to it.
+- **Local testing**: Run both server and client locally for development.
 
-### Hosted (Recommended)
+### Self-Hosted Setup
 
-1. **Download** `tunly-client` for your OS from [Releases](https://github.com/0xReLogic/Tunly/releases)
-2. **Double‑click** `tunly-client` to run
-3. When prompted, open `https://tunly.online`, copy the token shown in the UI, then paste it into the client
-4. Enter your local address when prompted (default: `127.0.0.1:80`)
-5. The client will print your **Public URL**, e.g., `https://app.tunly.online/s/<session>/` — share this URL
-6. View the session log: `https://app.tunly.online/s/<session>/_log`
+1. **Download** `tunly-client` and `tunly-server` for your OS from [Releases](https://github.com/0xReLogic/Tunly/releases)
+2. **Start the server** on your VPS or cloud:
+   ```bash
+   tunly-server --port 8080
+   ```
+3. **Run the client** locally:
+   ```bash
+   tunly-client --remote-host your-server.com:8080
+   ```
+4. When prompted, get a token from `http://your-server.com:8080/token` and paste it
+5. Enter your local address when prompted (default: `127.0.0.1:80`)
+6. The client will print your **Public URL**, e.g., `https://your-server.com/s/<session>/` — share this URL
+7. View the session log: `https://your-server.com/s/<session>/_log`
 
 > Notes:
 > - Long flags use kebab-case (e.g., `--remote-host`, `--token-url`, `--allow-token-query`).
@@ -92,13 +98,7 @@ Want to test apps on the internet but don't want to use ngrok's complexity?
 
 If building from source:
 
-- **Hosted (recommended)** — interactive (no flags):
-  ```
-  cargo run --bin tunly-client --
-  ```
-  Then follow the prompts: paste the token from `https://tunly.online` and enter your local address.
-
-- **Self-host (advanced)** — run your own server, then point client to it.
+- **Self-host** — run your own server, then point client to it.
 
   1) Start server (ephemeral token mode):
   ```
@@ -110,7 +110,7 @@ If building from source:
   cargo run --bin tunly-client -- --remote-host <server-ip-or-host>:9000 --use-wss=false --local 127.0.0.1:8080
   ```
 
-  2b) Start client (auto-fetch token; advanced):
+  2b) Start client (auto-fetch token):
   ```
   cargo run --bin tunly-client -- --remote-host <server-ip-or-host>:9000 \
     --use-wss=false \
@@ -174,10 +174,10 @@ Notes:
   - Client: use `--token-url http://<server>:<port>/token` so the token matches the current `sid` automatically.
   - Manual prompt is not compatible with Ephemeral mode (will be rejected as invalid).
 
-### Server Alternatives
+### Server Hosting Options
 - **Cheap VPS**: DigitalOcean, Vultr, Linode ($5/month)
 - **Free cloud**: Oracle Cloud Free Tier, Google Cloud Free Tier
-- **Local testing**: Can use ngrok first for testing, then move to VPS
+- **Platform-as-a-Service**: Render, Railway, Koyeb (easy deployment)
 
 ---
 
