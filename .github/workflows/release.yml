@@ -198,25 +198,3 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           files: ./${{ matrix.artifact_name }}.zip
-
-  checksums:
-    name: Generate Checksums
-    needs: [create-release, build-rust]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v7
-
-      - name: Generate SHA256 checksums
-        run: |
-          for file in tunly-*/*; do
-            sha256sum "$file" >> SHA256SUMS.txt
-          done
-
-      - name: Upload checksums
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.create-release.outputs.version }}
-          files: ./SHA256SUMS.txt
