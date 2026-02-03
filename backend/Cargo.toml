@@ -29,3 +29,26 @@ thiserror = "1"
 urlencoding = "2"
 rand = "0.8"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+# Extreme optimization profile for release builds
+# This will make binaries MUCH smaller but takes longer to compile
+[profile.release]
+# Optimize for size (z = most aggressive size optimization)
+opt-level = "z"
+
+# Enable Link Time Optimization (fat = most aggressive, slower compile)
+lto = "fat"
+
+# Single codegen unit for better optimization (slower compile, smaller binary)
+codegen-units = 1
+
+# Strip symbols from binary (smaller size, no debug info)
+strip = true
+
+# Abort on panic instead of unwinding (smaller binary)
+panic = "abort"
+
+# Additional size optimizations for all dependencies
+[profile.release.package."*"]
+opt-level = "z"
+strip = true

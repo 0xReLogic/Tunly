@@ -1,15 +1,19 @@
-use std::{fs, io::{self, Write}, time::{Duration, Instant}};
+use std::{
+    fs,
+    io::{self, Write},
+    time::{Duration, Instant},
+};
 
 use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
+use rand::RngCore;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use tokio::time::sleep;
-use tokio_tungstenite::tungstenite::{Message, Error as WsError};
-use rand::RngCore;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 struct TokenSession {
@@ -22,7 +26,7 @@ struct TokenSession {
 }
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "tunly-client", about = "Tunly Client")] 
+#[command(name = "tunly-client", about = "Tunly Client")]
 struct ClientArgs {
     /// Remote server host[:port], default app.tunly.online (backend)
     #[arg(long)]
@@ -46,13 +50,13 @@ struct ClientArgs {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")] 
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerToClient {
     ProxyRequest(ProxyRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")] 
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientToServer {
     ProxyResponse(ProxyResponse),
 }
@@ -86,59 +90,86 @@ async fn main() {
     // Initialize Rustls crypto provider (required for rustls 0.23 when using ring)
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    println!("Running Tunly Client. Tekan Ctrl+C untuk keluar.");
+    println!("Running Tunly Client. Press Ctrl+C to exit.");
 
     // Resolve remote host and scheme
-    let remote_host = args.remote_host.clone().unwrap_or_else(|| "app.tunly.online".to_string());
+    let remote_host = args
+        .remote_host
+        .clone()
+        .unwrap_or_else(|| "app.tunly.online".to_string());
     let scheme = if args.use_wss { "wss" } else { "ws" };
-    let path = if args.path.starts_with('/') { args.path.clone() } else { format!("/{}", args.path) };
+    let path = if args.path.starts_with('/') {
+        args.path.clone()
+    } else {
+        format!("/{}", args.path)
+    };
 
     // Acquire token/session
     let mut token_session = if let Some(url) = args.token_url.clone() {
         match reqwest::get(&url).await {
-            Ok(resp) => match resp.error_for_status() {
-                Ok(ok) => {
-                    let ctype = ok.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-                    let bytes = ok.bytes().await.unwrap_or_default();
-                    let body_str = String::from_utf8_lossy(&bytes);
-                    if ctype.contains("application/json") || body_str.trim_start().starts_with('{') {
-                        match serde_json::from_slice::<TokenSession>(&bytes) {
-                            Ok(mut ts) => {
-                                if ts.token.trim().is_empty() {
-                                    eprintln!("token-url JSON missing token, prompting manual token...");
-                                    ts.token = String::new();
+            Ok(resp) => {
+                match resp.error_for_status() {
+                    Ok(ok) => {
+                        let ctype = ok
+                            .headers()
+                            .get(reqwest::header::CONTENT_TYPE)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("")
+                            .to_string();
+                        let bytes = ok.bytes().await.unwrap_or_default();
+                        let body_str = String::from_utf8_lossy(&bytes);
+                        if ctype.contains("application/json")
+                            || body_str.trim_start().starts_with('{')
+                        {
+                            match serde_json::from_slice::<TokenSession>(&bytes) {
+                                Ok(mut ts) => {
+                                    if ts.token.trim().is_empty() {
+                                        eprintln!("token-url JSON missing token, prompting manual token...");
+                                        ts.token = String::new();
+                                    }
+                                    ts
                                 }
-                                ts
+                                Err(e) => {
+                                    eprintln!("failed to parse token-url JSON: {}. prompting manual token...", e);
+                                    TokenSession::default()
+                                }
                             }
-                            Err(e) => {
-                                eprintln!("failed to parse token-url JSON: {}. prompting manual token...", e);
-                                TokenSession::default()
-                            }
-                        }
-                    } else {
-                        let txt = body_str.trim().to_string();
-                        if txt.is_empty() {
-                            eprintln!("token-url returned empty body, prompting manual token...");
-                            TokenSession::default()
                         } else {
-                            TokenSession { token: txt, ..Default::default() }
+                            let txt = body_str.trim().to_string();
+                            if txt.is_empty() {
+                                eprintln!(
+                                    "token-url returned empty body, prompting manual token..."
+                                );
+                                TokenSession::default()
+                            } else {
+                                TokenSession {
+                                    token: txt,
+                                    ..Default::default()
+                                }
+                            }
                         }
                     }
+                    Err(e) => {
+                        eprintln!("token-url error: {}. prompting manual token...", e);
+                        TokenSession::default()
+                    }
                 }
-                Err(e) => {
-                    eprintln!("token-url error: {}. prompting manual token...", e);
-                    TokenSession::default()
-                }
-            },
+            }
             Err(e) => {
-                eprintln!("failed to fetch token-url: {}. prompting manual token...", e);
+                eprintln!(
+                    "failed to fetch token-url: {}. prompting manual token...",
+                    e
+                );
                 TokenSession::default()
             }
         }
     } else {
         // Try env/config; if not found, leave token empty to trigger prompt later
         match load_token() {
-            Ok(tok) => TokenSession { token: tok, ..Default::default() },
+            Ok(tok) => TokenSession {
+                token: tok,
+                ..Default::default()
+            },
             Err(_) => TokenSession::default(),
         }
     };
@@ -157,10 +188,17 @@ async fn main() {
                 match reqwest::get(&url).await {
                     Ok(resp) => match resp.error_for_status() {
                         Ok(ok) => {
-                            let ctype = ok.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                            let ctype = ok
+                                .headers()
+                                .get(reqwest::header::CONTENT_TYPE)
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or("")
+                                .to_string();
                             let bytes = ok.bytes().await.unwrap_or_default();
                             let body_str = String::from_utf8_lossy(&bytes);
-                            if ctype.contains("application/json") || body_str.trim_start().starts_with('{') {
+                            if ctype.contains("application/json")
+                                || body_str.trim_start().starts_with('{')
+                            {
                                 if let Ok(ts) = serde_json::from_slice::<TokenSession>(&bytes) {
                                     if !ts.token.trim().is_empty() {
                                         token_session = ts;
@@ -176,7 +214,7 @@ async fn main() {
                                 let txt = body_str.trim().to_string();
                                 if !txt.is_empty() {
                                     token_session.token = txt;
-                                                                    } else {
+                                } else {
                                     eprintln!("token-url returned empty body, falling back to manual prompt...");
                                 }
                             }
@@ -186,59 +224,95 @@ async fn main() {
                         }
                     },
                     Err(e) => {
-                        eprintln!("failed to fetch token-url: {}. falling back to manual prompt...", e);
+                        eprintln!(
+                            "failed to fetch token-url: {}. falling back to manual prompt...",
+                            e
+                        );
                     }
                 }
             }
 
             if token_session.token.trim().is_empty() {
-                println!("Masukkan token (kalau belum ada, buka https://{})", remote_host);
+                println!(
+                    "Enter token (if you don't have one, visit https://{})",
+                    remote_host
+                );
                 print!("token: ");
                 let _ = io::stdout().flush();
                 let mut buf = String::new();
-                if io::stdin().read_line(&mut buf).is_err() { continue; }
+                if io::stdin().read_line(&mut buf).is_err() {
+                    continue;
+                }
                 token_session.token = buf.trim().to_string();
-                if token_session.token.is_empty() { continue; }
+                if token_session.token.is_empty() {
+                    continue;
+                }
             }
         }
 
         // Build current ws URL with session
-        let ws_url = format!("{}://{}{}?sid={}", scheme, remote_host, path, token_session.session);
+        let ws_url = format!(
+            "{}://{}{}?sid={}",
+            scheme, remote_host, path, token_session.session
+        );
 
         attempt += 1;
         println!("Connecting to {} (attempt #{})...", ws_url, attempt);
-        if attempt == 1 { println!("Kalau belum nyala, sabar ya. Bangunin server dulu ya…"); }
+        if attempt == 1 {
+            println!("If server is not running yet, please wait. Waking up server...");
+        }
 
-        let mut req = ws_url.clone().into_client_request().expect("failed to build WS request");
-        req.headers_mut().insert("Authorization", format!("Bearer {}", token_session.token).parse().unwrap());
+        let mut req = ws_url
+            .clone()
+            .into_client_request()
+            .expect("failed to build WS request");
+        req.headers_mut().insert(
+            "Authorization",
+            format!("Bearer {}", token_session.token).parse().unwrap(),
+        );
         match tokio_tungstenite::connect_async(req).await {
             Ok((ws_stream, _resp)) => {
                 // Token valid; ask for local address before starting proxying
                 let default_local = args.local.clone();
-                let input_prompt = format!("Masukkan alamat lokal (default {}): ", default_local);
+                let input_prompt = format!("Enter local address (default {}): ", default_local);
                 print!("{}", input_prompt);
                 let _ = io::stdout().flush();
                 let mut line = String::new();
                 let _ = io::stdin().read_line(&mut line);
                 let line = line.trim();
-                let local = if line.is_empty() { default_local } else { line.to_string() };
+                let local = if line.is_empty() {
+                    default_local
+                } else {
+                    line.to_string()
+                };
                 let local_base = format!("http://{}", local);
 
-                let http = reqwest::Client::builder().no_gzip().build().expect("failed to build http client");
+                let http = reqwest::Client::builder()
+                    .no_gzip()
+                    .build()
+                    .expect("failed to build http client");
 
-                let public_http = if scheme == "wss" { format!("https://{}/s/{}/", remote_host, token_session.session) } else { format!("http://{}/s/{}/", remote_host, token_session.session) };
+                let public_http = if scheme == "wss" {
+                    format!("https://{}/s/{}/", remote_host, token_session.session)
+                } else {
+                    format!("http://{}/s/{}/", remote_host, token_session.session)
+                };
                 println!("Public URL: {}", public_http);
-                if token_session.expires_in > 0 { println!("Note: token expires in ~{}s", token_session.expires_in); }
+                if token_session.expires_in > 0 {
+                    println!("Note: token expires in ~{}s", token_session.expires_in);
+                }
 
                 println!("Connected. Waiting for requests...");
-                println!("Tekan Ctrl+C untuk keluar.");
+                println!("Press Ctrl+C to exit.");
                 let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
                 // Outbound single-writer task with channel
                 let (out_tx, mut out_rx) = mpsc::channel::<Message>(64);
                 let writer = tokio::spawn(async move {
                     while let Some(msg) = out_rx.recv().await {
-                        if ws_tx.send(msg).await.is_err() { break; }
+                        if ws_tx.send(msg).await.is_err() {
+                            break;
+                        }
                     }
                 });
 
@@ -248,7 +322,9 @@ async fn main() {
                     let mut interval = tokio::time::interval(Duration::from_secs(20));
                     loop {
                         interval.tick().await;
-                        if hb_tx.send(Message::Ping(Vec::new())).await.is_err() { break; }
+                        if hb_tx.send(Message::Ping(Vec::new())).await.is_err() {
+                            break;
+                        }
                     }
                 });
 
@@ -261,22 +337,21 @@ async fn main() {
                         }
                     };
                     match msg {
-                        Message::Text(txt) => {
-                            match serde_json::from_str::<ServerToClient>(&txt) {
-                                Ok(ServerToClient::ProxyRequest(req_msg)) => {
-                                    let resp_msg = handle_proxy(&http, &local_base, req_msg).await;
-                                    let text = serde_json::to_string(&ClientToServer::ProxyResponse(resp_msg))
+                        Message::Text(txt) => match serde_json::from_str::<ServerToClient>(&txt) {
+                            Ok(ServerToClient::ProxyRequest(req_msg)) => {
+                                let resp_msg = handle_proxy(&http, &local_base, req_msg).await;
+                                let text =
+                                    serde_json::to_string(&ClientToServer::ProxyResponse(resp_msg))
                                         .expect("serialize response");
-                                    if let Err(e) = out_tx.send(Message::Text(text)).await {
-                                        eprintln!("Failed to send response over WS: {}", e);
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Failed to parse server message: {}", e);
+                                if let Err(e) = out_tx.send(Message::Text(text)).await {
+                                    eprintln!("Failed to send response over WS: {}", e);
+                                    break;
                                 }
                             }
-                        }
+                            Err(e) => {
+                                eprintln!("Failed to parse server message: {}", e);
+                            }
+                        },
                         Message::Ping(p) => {
                             let _ = out_tx.send(Message::Pong(p)).await;
                         }
@@ -288,8 +363,8 @@ async fn main() {
                     }
                 }
 
-                let _ = heartbeat.abort();
-                let _ = writer.abort();
+                heartbeat.abort();
+                writer.abort();
 
                 // After a disconnect, generate a new session ID for next attempt
                 token_session.session = generate_session_id();
@@ -297,22 +372,24 @@ async fn main() {
                 attempt = 0;
             }
             Err(e) => {
-                match &e {
-                    WsError::Http(resp) => {
-                        let code = resp.status().as_u16();
-                        if code == 401 || code == 403 {
-                            println!("Token tidak valid atau sudah kadaluarsa.");
-                            println!("Dapatkan token baru di https://{} lalu masukkan lagi.", remote_host);
-                            token_session.token.clear();
-                            // Reset attempt for fresh start after reprompt
-                            attempt = 0;
-                            continue;
-                        }
+                if let WsError::Http(resp) = &e {
+                    let code = resp.status().as_u16();
+                    if code == 401 || code == 403 {
+                        println!("Token is invalid or has expired.");
+                        println!(
+                            "Get a new token at https://{} and enter it again.",
+                            remote_host
+                        );
+                        token_session.token.clear();
+                        // Reset attempt for fresh start after reprompt
+                        attempt = 0;
+                        continue;
                     }
-                    _ => {}
                 }
                 eprintln!("Failed to connect: {}", e);
-                if attempt <= 2 { println!("Sepertinya masih dingin. Nunggu bentar ya…"); }
+                if attempt <= 2 {
+                    println!("Server might be cold starting. Please wait...");
+                }
                 // Exponential backoff before reconnect (max 15s)
                 let backoff = 2u64.saturating_pow(attempt.min(4));
                 sleep(Duration::from_secs(backoff.min(15))).await;
@@ -323,7 +400,11 @@ async fn main() {
     }
 }
 
-async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRequest) -> ProxyResponse {
+async fn handle_proxy(
+    http: &reqwest::Client,
+    local_base: &str,
+    req_msg: ProxyRequest,
+) -> ProxyResponse {
     println!("-> CLIENT received proxy request for URI: {}", &req_msg.uri);
     // Build URL to local server
     let url = if req_msg.uri.starts_with('/') {
@@ -343,10 +424,14 @@ async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRe
     // Headers
     let mut headers = HeaderMap::new();
     for (k, v) in req_msg.headers.iter() {
-        if is_hop_by_hop(k) { continue; }
+        if is_hop_by_hop(k) {
+            continue;
+        }
         if k.eq_ignore_ascii_case("host") {
             // Rewrite host to local target
-                        let local_host = local_base.trim_start_matches("http://").trim_start_matches("https://");
+            let local_host = local_base
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
             let host_parts: Vec<&str> = local_host.split(':').collect();
             let port = host_parts.get(1).unwrap_or(&"80");
             if let Ok(val) = HeaderValue::from_str(&format!("localhost:{}", port)) {
@@ -354,10 +439,10 @@ async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRe
             }
             continue;
         }
-        if let (Ok(name), Ok(value)) = (
-            HeaderName::try_from(k.as_str()),
-            HeaderValue::from_str(v),
-        ) { headers.insert(name, value); }
+        if let (Ok(name), Ok(value)) = (HeaderName::try_from(k.as_str()), HeaderValue::from_str(v))
+        {
+            headers.insert(name, value);
+        }
     }
     builder = builder.headers(headers);
 
@@ -379,14 +464,30 @@ async fn handle_proxy(http: &reqwest::Client, local_base: &str, req_msg: ProxyRe
             let bytes = resp.bytes().await.unwrap_or_default();
             let body_b64 = general_purpose::STANDARD_NO_PAD.encode(&bytes);
             let dur_ms = start.elapsed().as_millis();
-            println!("LOCAL {} {} -> {} in {}ms", method, req_msg.uri, status, dur_ms);
-            ProxyResponse { id: req_msg.id, status, headers: resp_headers, body_b64 }
+            println!(
+                "LOCAL {} {} -> {} in {}ms",
+                method, req_msg.uri, status, dur_ms
+            );
+            ProxyResponse {
+                id: req_msg.id,
+                status,
+                headers: resp_headers,
+                body_b64,
+            }
         }
         Err(err) => {
             let msg = format!("upstream error: {}", err);
             let dur_ms = start.elapsed().as_millis();
-            println!("LOCAL {} {} -> 502 in {}ms ({})", method, req_msg.uri, dur_ms, err);
-            ProxyResponse { id: req_msg.id, status: 502, headers: vec![("content-type".into(), "text/plain".into())], body_b64: general_purpose::STANDARD_NO_PAD.encode(msg.as_bytes()) }
+            println!(
+                "LOCAL {} {} -> 502 in {}ms ({})",
+                method, req_msg.uri, dur_ms, err
+            );
+            ProxyResponse {
+                id: req_msg.id,
+                status: 502,
+                headers: vec![("content-type".into(), "text/plain".into())],
+                body_b64: general_purpose::STANDARD_NO_PAD.encode(msg.as_bytes()),
+            }
         }
     }
 }
@@ -395,7 +496,9 @@ fn headers_to_vec(headers: &HeaderMap) -> Vec<(String, String)> {
     headers
         .iter()
         .filter_map(|(k, v)| {
-            if is_hop_by_hop(k.as_str()) { return None; }
+            if is_hop_by_hop(k.as_str()) {
+                return None;
+            }
             Some((k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         })
         .collect()
@@ -404,25 +507,37 @@ fn headers_to_vec(headers: &HeaderMap) -> Vec<(String, String)> {
 fn is_hop_by_hop(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "connection" | "keep-alive" | "proxy-authenticate" | "proxy-authorization" | "te" | "trailers" | "transfer-encoding" | "upgrade"
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailers"
+            | "transfer-encoding"
+            | "upgrade"
     )
 }
 
 fn load_token() -> Result<String, String> {
     // Try env first (TUNLY_TOKEN only)
-    if let Ok(tok) = std::env::var("TUNLY_TOKEN") { return Ok(tok); }
+    if let Ok(tok) = std::env::var("TUNLY_TOKEN") {
+        return Ok(tok);
+    }
 
     let content = fs::read_to_string("config.txt").map_err(|e| e.to_string())?;
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         let lower = line.to_lowercase();
-        if lower.starts_with("token") { // tolerate typos like "tokenn"
+        if lower.starts_with("token") {
+            // tolerate typos like "tokenn"
             // Try separators
             if let Some(pos) = line.find(':') {
-                return Ok(line[pos+1..].trim().trim_matches('"').to_string());
+                return Ok(line[pos + 1..].trim().trim_matches('"').to_string());
             } else if let Some(pos) = line.find('=') {
-                return Ok(line[pos+1..].trim().trim_matches('"').to_string());
+                return Ok(line[pos + 1..].trim().trim_matches('"').to_string());
             } else {
                 // token <value>
                 let mut parts = line.split_whitespace();

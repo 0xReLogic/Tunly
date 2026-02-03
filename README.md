@@ -5,6 +5,11 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue?style=for-the-badge)](https://github.com/0xReLogic/Tunly/releases)
 [![Download Client](https://img.shields.io/badge/Download-Client-2ea44f?style=for-the-badge&logo=github)](https://github.com/0xReLogic/Tunly/releases)
 
+[![CodeQL](https://github.com/0xReLogic/Tunly/actions/workflows/codeql.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/codeql.yml)
+[![Rust CI](https://github.com/0xReLogic/Tunly/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/rust-ci.yml)
+[![Frontend CI](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml)
+[![Release](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml)
+
 **Tunly** is a simple, lightweight, and open-source HTTP tunnel solution inspired by ngrok but without limitations, login requirements, or monthly fees.
 
 ---
@@ -247,15 +252,7 @@ Notes:
 
 ---
 
-# Made with ❤️ by Allen Elzayn
-
-
----
-
 ## License
 
 MIT License — free to use for commercial and non-commercial purposes.
-
----
-
-> **Tunly**: Like ngrok, but unlimited, no login required, and completely yours. 
+ 
