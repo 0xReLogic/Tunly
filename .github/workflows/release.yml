@@ -37,14 +37,15 @@ jobs:
 
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: Tunly ${{ steps.get_version.outputs.version }}
+          name: Tunly ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
+          generate_release_notes: false
           body: |
             ## Tunly Release ${{ steps.get_version.outputs.version }}
             
@@ -171,25 +172,21 @@ jobs:
 
       - name: Upload Release Asset (Unix)
         if: runner.os != 'Windows'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.artifact_name }}.tar.gz
-          asset_name: ${{ matrix.artifact_name }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: ./${{ matrix.artifact_name }}.tar.gz
 
       - name: Upload Release Asset (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.artifact_name }}.zip
-          asset_name: ${{ matrix.artifact_name }}.zip
-          asset_content_type: application/zip
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: ./${{ matrix.artifact_name }}.zip
 
   build-docker:
     name: Build Docker Image
@@ -255,11 +252,9 @@ jobs:
           done
 
       - name: Upload checksums
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./SHA256SUMS.txt
-          asset_name: SHA256SUMS.txt
-          asset_content_type: text/plain
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: ./SHA256SUMS.txt
