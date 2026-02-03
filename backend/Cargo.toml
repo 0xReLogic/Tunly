@@ -21,7 +21,7 @@ base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 futures = "0.3"
 hyper = { version = "1", features = ["http1", "http2", "client", "server"] }
-reqwest = { version = "0.12", features = ["json", "gzip", "brotli", "deflate"] }
+reqwest = { version = "0.12", features = ["json", "gzip", "brotli", "deflate", "rustls-tls-native-roots"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -30,6 +30,7 @@ thiserror = "2"
 urlencoding = "2"
 rand = "0.9"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+openssl = { version = "0.10", features = ["vendored"] }
 
 # Extreme optimization profile for release builds
 # This will make binaries MUCH smaller but takes longer to compile
