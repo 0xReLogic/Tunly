@@ -22,6 +22,7 @@ allow = [
     "0BSD",
     "BSL-1.0",
     "Unlicense",
+    "LGPL-2.1-or-later",
 ]
 confidence-threshold = 0.8
 
