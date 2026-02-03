@@ -369,11 +369,11 @@ async fn token_endpoint(
 
     // Generate random token & session, tie to requesting IP, TTL 5 minutes
     let mut tok_bytes = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut tok_bytes);
+    rand::rng().fill_bytes(&mut tok_bytes);
     let token = general_purpose::URL_SAFE_NO_PAD.encode(tok_bytes);
 
     let mut sid_bytes = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut sid_bytes);
+    rand::rng().fill_bytes(&mut sid_bytes);
     let session = general_purpose::URL_SAFE_NO_PAD.encode(sid_bytes);
 
     let expiry = Instant::now() + Duration::from_secs(300);
@@ -424,7 +424,7 @@ async fn client_ws(stream: WebSocket, state: Arc<AppState>, sid: String) {
     let write_task = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             let text = serde_json::to_string(&msg).unwrap();
-            if ws_tx.send(Message::Text(text)).await.is_err() {
+            if ws_tx.send(Message::Text(text.into())).await.is_err() {
                 break;
             }
             // update last_seen on outbound activity
