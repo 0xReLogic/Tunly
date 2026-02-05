@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
-use std::collections::HashMap;
-use std::time::Instant;
-use tokio::sync::{Mutex, RwLock, mpsc};
 use axum::http::StatusCode;
 use axum_test::TestServer;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tunly::{
     create_app, AppState, AuthMode, ClientToServer, Metrics, ProxyResponse, ServerToClient,
     SessionState,
@@ -36,7 +36,11 @@ async fn test_concurrent_proxy_flooding() {
     });
 
     let sid = "concurrent-test-session".to_string();
-    state.sessions.write().await.insert(sid.clone(), session.clone());
+    state
+        .sessions
+        .write()
+        .await
+        .insert(sid.clone(), session.clone());
 
     // Background task to respond to all incoming proxy requests
     let session_clone = session.clone();
@@ -59,8 +63,8 @@ async fn test_concurrent_proxy_flooding() {
         }
     });
 
-    let app = create_app(state.clone())
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let app =
+        create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let server = Arc::new(TestServer::new(app).unwrap());
 
     let mut handles = vec![];
@@ -95,8 +99,8 @@ async fn test_server_health_check() {
         metrics: Metrics::new(),
     });
 
-    let app = create_app(state.clone())
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let app =
+        create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let server = TestServer::new(app).unwrap();
 
     let response = server.get("/").await;
@@ -121,11 +125,11 @@ async fn test_proxy_rate_limiting() {
         metrics: Metrics::new(),
     });
 
-    let app = create_app(state.clone())
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let app =
+        create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let server = TestServer::new(app).unwrap();
 
-    // Send 120 requests to a proxy route. 
+    // Send 120 requests to a proxy route.
     // They will fail with 503 "no tunnel client for session" but should still count towards rate limit.
     for _ in 0..120 {
         let response = server.get("/s/session123/").await;
@@ -163,16 +167,21 @@ async fn test_body_size_limit() {
         access_log: Mutex::new(Vec::new()),
     });
 
-    state.sessions.write().await.insert("test-session".to_string(), session);
+    state
+        .sessions
+        .write()
+        .await
+        .insert("test-session".to_string(), session);
 
-    let app = create_app(state.clone())
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let app =
+        create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let server = TestServer::new(app).unwrap();
 
     // Create a 2.1 MB body
     let large_body = vec![0u8; 2100 * 1024];
 
-    let response = server.post("/s/test-session/")
+    let response = server
+        .post("/s/test-session/")
         .add_header(axum::http::header::CONTENT_TYPE, "application/octet-stream")
         .json(&large_body)
         .await;
@@ -196,8 +205,8 @@ async fn test_jwt_auth_flow() {
         metrics: Metrics::new(),
     });
 
-    let app = create_app(state.clone())
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let app =
+        create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let server = TestServer::new(app).unwrap();
 
     // 1. Get Token
@@ -209,26 +218,37 @@ async fn test_jwt_auth_flow() {
 
     // 2. Validate token in WS upgrade (using query param since we enabled it)
     // Note: TestServer doesn't easily support actual WS upgrades in this context,
-    // but it triggers the route handler. 
+    // but it triggers the route handler.
     // Handlers that return response (like ws_handler) will return UNAUTHORIZED if token fails.
-    
+
     let ws_url = format!("/ws?sid={}&token={}", sid, token);
-    let ws_resp = server.get(&ws_url)
+    let ws_resp = server
+        .get(&ws_url)
         .add_header(axum::http::header::UPGRADE, "websocket")
         .add_header(axum::http::header::CONNECTION, "upgrade")
-        .add_header(axum::http::header::SEC_WEBSOCKET_KEY, "dGhlIHNhbXBsZSBub25jZQ==")
+        .add_header(
+            axum::http::header::SEC_WEBSOCKET_KEY,
+            "dGhlIHNhbXBsZSBub25jZQ==",
+        )
         .add_header(axum::http::header::SEC_WEBSOCKET_VERSION, "13")
         .await;
-    // If it gets past auth, it will try to upgrade. 
+    // If it gets past auth, it will try to upgrade.
     // In TestServer, if it returns 200 or 101, it means it passed auth.
     // However, ws_handler returns `Response` which might be 101 Switching Protocols.
-    assert!(ws_resp.status_code() == StatusCode::SWITCHING_PROTOCOLS || ws_resp.status_code() == StatusCode::OK);
+    assert!(
+        ws_resp.status_code() == StatusCode::SWITCHING_PROTOCOLS
+            || ws_resp.status_code() == StatusCode::OK
+    );
 
     // 3. Try to reuse same token (should fail)
-    let ws_resp_retry = server.get(&ws_url)
+    let ws_resp_retry = server
+        .get(&ws_url)
         .add_header(axum::http::header::UPGRADE, "websocket")
         .add_header(axum::http::header::CONNECTION, "upgrade")
-        .add_header(axum::http::header::SEC_WEBSOCKET_KEY, "dGhlIHNhbXBsZSBub25jZQ==")
+        .add_header(
+            axum::http::header::SEC_WEBSOCKET_KEY,
+            "dGhlIHNhbXBsZSBub25jZQ==",
+        )
         .add_header(axum::http::header::SEC_WEBSOCKET_VERSION, "13")
         .await;
     assert_eq!(ws_resp_retry.status_code(), StatusCode::UNAUTHORIZED);
@@ -249,7 +269,7 @@ fn test_no_compression_for_small_data() {
     let small_data = b"small data";
     let (b64, compressed) = tunly::compress_body(small_data);
     assert!(!compressed, "Small data should not be compressed");
-    
+
     let decompressed = tunly::decompress_body(&b64, compressed);
     assert_eq!(small_data, decompressed.as_slice());
 }

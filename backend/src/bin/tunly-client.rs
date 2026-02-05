@@ -197,7 +197,10 @@ async fn main() {
                             }
                         }
                         Err(e) => {
-                            tracing::error!("token-url error: {}. falling back to manual prompt...", e);
+                            tracing::error!(
+                                "token-url error: {}. falling back to manual prompt...",
+                                e
+                            );
                         }
                     },
                     Err(e) => {
@@ -250,7 +253,9 @@ async fn main() {
         // Enable WebSocket compression (permessage-deflate)
         req.headers_mut().insert(
             "Sec-WebSocket-Extensions",
-            "permessage-deflate; client_max_window_bits".parse().unwrap(),
+            "permessage-deflate; client_max_window_bits"
+                .parse()
+                .unwrap(),
         );
 
         match tokio_tungstenite::connect_async(req).await {
@@ -264,7 +269,9 @@ async fn main() {
                 if compressed {
                     tracing::info!("Connected! WebSocket compression: ENABLED");
                 } else {
-                    tracing::info!("Connected! WebSocket compression: DISABLED (not supported by server)");
+                    tracing::info!(
+                        "Connected! WebSocket compression: DISABLED (not supported by server)"
+                    );
                 }
 
                 // Token valid; ask for local address before starting proxying
@@ -454,7 +461,10 @@ async fn handle_proxy(
             let dur_ms = start.elapsed().as_millis();
             tracing::info!(
                 "LOCAL {} {} -> {} in {}ms",
-                method, req_msg.uri, status, dur_ms
+                method,
+                req_msg.uri,
+                status,
+                dur_ms
             );
             ProxyResponse {
                 id: req_msg.id,
@@ -469,7 +479,10 @@ async fn handle_proxy(
             let dur_ms = start.elapsed().as_millis();
             tracing::info!(
                 "LOCAL {} {} -> 502 in {}ms ({})",
-                method, req_msg.uri, dur_ms, err
+                method,
+                req_msg.uri,
+                dur_ms,
+                err
             );
             let (body_b64, is_compressed) = tunly::compress_body(msg.as_bytes());
             ProxyResponse {

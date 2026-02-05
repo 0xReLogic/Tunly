@@ -23,11 +23,11 @@ use base64::{engine::general_purpose, Engine as _};
 use flate2::read::{ZlibDecoder, ZlibEncoder};
 use flate2::Compression;
 use futures::{SinkExt, StreamExt};
-use std::io::Read;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use prometheus::{Counter, Encoder, Gauge, Histogram, HistogramOpts, Registry, TextEncoder};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
@@ -88,6 +88,12 @@ pub struct Metrics {
     pub active_sessions: Gauge,
 }
 
+impl Default for Metrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Metrics {
     pub fn new() -> Self {
         let registry = Registry::new();
@@ -99,14 +105,19 @@ impl Metrics {
             "Latency of proxied requests",
         ))
         .unwrap();
-        let active_sessions =
-            Gauge::new("active_sessions", "Current active WebSocket tunnel sessions").unwrap();
+        let active_sessions = Gauge::new(
+            "active_sessions",
+            "Current active WebSocket tunnel sessions",
+        )
+        .unwrap();
 
         registry.register(Box::new(proxy_requests.clone())).unwrap();
         registry
             .register(Box::new(proxy_latency_seconds.clone()))
             .unwrap();
-        registry.register(Box::new(active_sessions.clone())).unwrap();
+        registry
+            .register(Box::new(active_sessions.clone()))
+            .unwrap();
 
         Self {
             registry,
@@ -331,9 +342,12 @@ pub async fn token_endpoint(
             .get("x-internal-key")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        
+
         if provided_key != required_key {
-            tracing::warn!("Unauthorized /token access attempt from {}", extract_real_ip(&addr, &headers));
+            tracing::warn!(
+                "Unauthorized /token access attempt from {}",
+                extract_real_ip(&addr, &headers)
+            );
             return (StatusCode::UNAUTHORIZED, "unauthorized access").into_response();
         }
     }
@@ -615,7 +629,9 @@ pub async fn proxy_logic(
                     return axum::http::Response::builder()
                         .status(StatusCode::TOO_MANY_REQUESTS)
                         .header("retry-after", retry_after.to_string())
-                        .body(axum::body::Body::from("rate limit exceeded for proxy requests"))
+                        .body(axum::body::Body::from(
+                            "rate limit exceeded for proxy requests",
+                        ))
                         .unwrap()
                         .into_response();
                 } else {
@@ -918,7 +934,11 @@ pub fn is_hop_by_hop(name: &str) -> bool {
 
 // Redirect root Next.js asset requests (/_next/*) to the prefixed session path (/s/:sid/_next/*)
 // We infer the session id preferring Referer (so multiple sessions work), then cookie.
-pub async fn next_asset_redirect(Path(path): Path<String>, headers: HeaderMap, uri: Uri) -> Response {
+pub async fn next_asset_redirect(
+    Path(path): Path<String>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
     let qs = uri
         .query()
         .map(|q| {

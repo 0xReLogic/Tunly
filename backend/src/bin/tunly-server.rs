@@ -1,10 +1,7 @@
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{
-        atomic::AtomicU64,
-        Arc,
-    },
+    sync::{atomic::AtomicU64, Arc},
     time::{Duration, Instant},
 };
 
