@@ -8,7 +8,12 @@ export async function GET() {
   const target = `${base.replace(/\/$/, '')}/token`
 
   try {
-    const res = await fetch(target, { cache: 'no-store' })
+    const res = await fetch(target, { 
+      cache: 'no-store',
+      headers: {
+        'X-Internal-Key': process.env.TUNLY_INTERNAL_KEY || ''
+      }
+    })
     const text = await res.text()
 
     if (!res.ok) {

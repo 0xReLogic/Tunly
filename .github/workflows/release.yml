@@ -26,6 +26,9 @@ jobs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Get version
         id: get_version
         run: |
@@ -45,18 +48,30 @@ jobs:
           name: Tunly ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
-          generate_release_notes: false
+          generate_release_notes: true
           body: |
             ## Tunly Release ${{ steps.get_version.outputs.version }}
             
             ### Downloads
             Download the appropriate binary for your platform below.
             
-            ### Installation
-            1. Download the binary for your OS
-            2. Extract the archive
-            3. Run `tunly-client` or `tunly-server`
+            ### Quick Start Guide
             
+            #### Hosting your own Server (VPS)
+            ```bash
+            ./tunly-server --port 8080
+            ```
+            
+            #### Exposing Local App (Client)
+            ```bash
+            ./tunly-client --remote-host <vps-ip>:8080 --local 127.0.0.1:3000
+            ```
+            
+            ### Usage Notes
+            - Server: Run with `--internal-key` to protect the token endpoint.
+            - Client: Use `--token-url` or enter the token manually when prompted.
+            - Documentation: See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full configuration.
+
             ### What's New
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
 

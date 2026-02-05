@@ -27,15 +27,13 @@
 
 ## Key Features
 
-- No login, no dashboard
-- Unlimited tunnels (as long as your server is running)
-- Simple UX: enter token and local address, get your public URL instantly
-- Token-based authentication: secure and flexible
-- Can run on VPS, cloud, or locally (self-host)
-- Lightweight: pure binary, no complex dependencies
-- No telemetry, no tracking, no nonsense
-- Clear logs: server prints `PROXY` per request, client prints `LOCAL` per proxied request
-- Built-in session log page: `/s/:sid/_log` shows recent accessed paths (e.g., `/`, `/api`, `/blog`)
+- **Zero Configuration**: No login, no dashboard, and no complex registration.
+- **Advanced Security**: Secure **JWT-based authentication** with IP binding and single-use protection.
+- **High Performance**: Native **HTTP/2 support** with multiplexing and transparent **Zlib compression**.
+- **Full Observability**: Prometheus metrics (`/metrics`), structured JSON logging, and a built-in session activity viewer (`/_log`).
+- **Production Built**: Lightweight binary with persistent connection pooling and enforced security limits.
+- **Self-Hostable**: Easily deploy on any VPS or Cloud (DigitalOcean, Vultr, Koyeb, etc.).
+- **Privacy First**: 100% open-source with zero tracking or telemetry.
 
 ---
 
@@ -183,15 +181,19 @@ Notes:
 
 ## Environment & Deploy
 
+You can configure Tunly using environment variables. See the `.env.example` files in the root, `backend/`, and `frontend/` directories for templates.
+
 - **Server env**:
   - `PORT` (from platform, e.g., Render, Koyeb) — server listens on this port automatically.
   - `TUNLY_TOKEN` — optional; if set, server uses fixed-token mode. If not set and `--token` is not provided, server uses ephemeral mode with `/token` issuance.
+  - `TUNLY_INTERNAL_KEY` — optional; if set, restricts `/token` access to requests providing this key in the `X-Internal-Key` header (prevents direct `curl` requests to your backend).
 - **Client config**:
   - `config.txt` with `token: <value>` (tolerant to `token=`/`token:`/`tokenn`).
   - Or env `TUNLY_TOKEN`.
   - Or runtime fetch via `--token-url http://<server>:<port>/token` (ephemeral mode).
 - **Frontend env**:
   - `BACKEND_BASE_URL` — base URL of your Tunly backend (e.g., `https://<your-app>.koyeb.app` or your custom domain). Used by the Next.js proxy route `app/api/token/route.ts` to call `/token`.
+  - `TUNLY_INTERNAL_KEY` — must match the server's key to allow the frontend to fetch tokens securely via the Next.js API route.
 - **Deploy on Koyeb**:
   - Source: Docker → Dockerfile path: `backend/Dockerfile`
   - Health check: `GET /healthz`

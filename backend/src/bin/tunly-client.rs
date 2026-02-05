@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
+use tunly::{ClientToServer, ProxyRequest, ProxyResponse, ServerToClient};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 struct TokenSession {
@@ -49,48 +50,24 @@ struct ClientArgs {
     token_url: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ServerToClient {
-    ProxyRequest(ProxyRequest),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ClientToServer {
-    ProxyResponse(ProxyResponse),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProxyRequest {
-    pub id: u64,
-    pub method: String,
-    pub uri: String,
-    pub headers: Vec<(String, String)>,
-    pub body_b64: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProxyResponse {
-    pub id: u64,
-    pub status: u16,
-    pub headers: Vec<(String, String)>,
-    pub body_b64: String,
-}
-
 fn generate_session_id() -> String {
     let mut bytes = [0u8; 16];
     rand::rng().fill_bytes(&mut bytes);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let args = ClientArgs::parse();
     // Initialize Rustls crypto provider (required for rustls 0.23 when using ring)
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    println!("Running Tunly Client. Press Ctrl+C to exit.");
+    tracing::info!("Running Tunly Client. Press Ctrl+C to exit.");
+
+    let http = reqwest::Client::builder()
+        .build()
+        .expect("failed to build http client");
 
     // Resolve remote host and scheme
     let remote_host = args
@@ -106,7 +83,7 @@ async fn main() {
 
     // Acquire token/session
     let mut token_session = if let Some(url) = args.token_url.clone() {
-        match reqwest::get(&url).await {
+        match http.get(&url).send().await {
             Ok(resp) => {
                 match resp.error_for_status() {
                     Ok(ok) => {
@@ -124,20 +101,20 @@ async fn main() {
                             match serde_json::from_slice::<TokenSession>(&bytes) {
                                 Ok(mut ts) => {
                                     if ts.token.trim().is_empty() {
-                                        eprintln!("token-url JSON missing token, prompting manual token...");
+                                        tracing::error!("token-url JSON missing token, prompting manual token...");
                                         ts.token = String::new();
                                     }
                                     ts
                                 }
                                 Err(e) => {
-                                    eprintln!("failed to parse token-url JSON: {}. prompting manual token...", e);
+                                    tracing::error!("failed to parse token-url JSON: {}. prompting manual token...", e);
                                     TokenSession::default()
                                 }
                             }
                         } else {
                             let txt = body_str.trim().to_string();
                             if txt.is_empty() {
-                                eprintln!(
+                                tracing::error!(
                                     "token-url returned empty body, prompting manual token..."
                                 );
                                 TokenSession::default()
@@ -150,13 +127,13 @@ async fn main() {
                         }
                     }
                     Err(e) => {
-                        eprintln!("token-url error: {}. prompting manual token...", e);
+                        tracing::error!("token-url error: {}. prompting manual token...", e);
                         TokenSession::default()
                     }
                 }
             }
             Err(e) => {
-                eprintln!(
+                tracing::error!(
                     "failed to fetch token-url: {}. prompting manual token...",
                     e
                 );
@@ -185,7 +162,7 @@ async fn main() {
         // If token missing, try auto-fetch from token-url first (Ephemeral mode)
         if token_session.token.trim().is_empty() {
             if let Some(url) = args.token_url.clone() {
-                match reqwest::get(&url).await {
+                match http.get(&url).send().await {
                     Ok(resp) => match resp.error_for_status() {
                         Ok(ok) => {
                             let ctype = ok
@@ -205,26 +182,26 @@ async fn main() {
                                         // proceed to connect with freshly fetched token
                                         // (skip manual prompt)
                                     } else {
-                                        eprintln!("token-url JSON missing token, falling back to manual prompt...");
+                                        tracing::error!("token-url JSON missing token, falling back to manual prompt...");
                                     }
                                 } else {
-                                    eprintln!("failed to parse token-url JSON, falling back to manual prompt...");
+                                    tracing::error!("failed to parse token-url JSON, falling back to manual prompt...");
                                 }
                             } else {
                                 let txt = body_str.trim().to_string();
                                 if !txt.is_empty() {
                                     token_session.token = txt;
                                 } else {
-                                    eprintln!("token-url returned empty body, falling back to manual prompt...");
+                                    tracing::error!("token-url returned empty body, falling back to manual prompt...");
                                 }
                             }
                         }
                         Err(e) => {
-                            eprintln!("token-url error: {}. falling back to manual prompt...", e);
+                            tracing::error!("token-url error: {}. falling back to manual prompt...", e);
                         }
                     },
                     Err(e) => {
-                        eprintln!(
+                        tracing::error!(
                             "failed to fetch token-url: {}. falling back to manual prompt...",
                             e
                         );
@@ -257,9 +234,9 @@ async fn main() {
         );
 
         attempt += 1;
-        println!("Connecting to {} (attempt #{})...", ws_url, attempt);
+        tracing::info!("Connecting to {} (attempt #{})...", ws_url, attempt);
         if attempt == 1 {
-            println!("If server is not running yet, please wait. Waking up server...");
+            tracing::info!("If server is not running yet, please wait. Waking up server...");
         }
 
         let mut req = ws_url
@@ -270,8 +247,26 @@ async fn main() {
             "Authorization",
             format!("Bearer {}", token_session.token).parse().unwrap(),
         );
+        // Enable WebSocket compression (permessage-deflate)
+        req.headers_mut().insert(
+            "Sec-WebSocket-Extensions",
+            "permessage-deflate; client_max_window_bits".parse().unwrap(),
+        );
+
         match tokio_tungstenite::connect_async(req).await {
-            Ok((ws_stream, _resp)) => {
+            Ok((ws_stream, resp)) => {
+                let compressed = resp
+                    .headers()
+                    .get("Sec-WebSocket-Extensions")
+                    .map(|v| v.to_str().unwrap_or("").contains("permessage-deflate"))
+                    .unwrap_or(false);
+
+                if compressed {
+                    tracing::info!("Connected! WebSocket compression: ENABLED");
+                } else {
+                    tracing::info!("Connected! WebSocket compression: DISABLED (not supported by server)");
+                }
+
                 // Token valid; ask for local address before starting proxying
                 let default_local = args.local.clone();
                 let input_prompt = format!("Enter local address (default {}): ", default_local);
@@ -287,23 +282,18 @@ async fn main() {
                 };
                 let local_base = format!("http://{}", local);
 
-                let http = reqwest::Client::builder()
-                    .no_gzip()
-                    .build()
-                    .expect("failed to build http client");
-
                 let public_http = if scheme == "wss" {
                     format!("https://{}/s/{}/", remote_host, token_session.session)
                 } else {
                     format!("http://{}/s/{}/", remote_host, token_session.session)
                 };
-                println!("Public URL: {}", public_http);
+                tracing::info!("Public URL: {}", public_http);
                 if token_session.expires_in > 0 {
-                    println!("Note: token expires in ~{}s", token_session.expires_in);
+                    tracing::info!("Note: token expires in ~{}s", token_session.expires_in);
                 }
 
-                println!("Connected. Waiting for requests...");
-                println!("Press Ctrl+C to exit.");
+                tracing::info!("Connected. Waiting for requests...");
+                tracing::info!("Press Ctrl+C to exit.");
                 let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
                 // Outbound single-writer task with channel
@@ -322,7 +312,7 @@ async fn main() {
                     let mut interval = tokio::time::interval(Duration::from_secs(20));
                     loop {
                         interval.tick().await;
-                        if hb_tx.send(Message::Ping(Vec::new())).await.is_err() {
+                        if hb_tx.send(Message::Ping(Vec::new().into())).await.is_err() {
                             break;
                         }
                     }
@@ -332,7 +322,7 @@ async fn main() {
                     let msg = match msg_res {
                         Ok(m) => m,
                         Err(e) => {
-                            eprintln!("WebSocket error: {}", e);
+                            tracing::error!("WebSocket error: {}", e);
                             break;
                         }
                     };
@@ -343,13 +333,13 @@ async fn main() {
                                 let text =
                                     serde_json::to_string(&ClientToServer::ProxyResponse(resp_msg))
                                         .expect("serialize response");
-                                if let Err(e) = out_tx.send(Message::Text(text)).await {
-                                    eprintln!("Failed to send response over WS: {}", e);
+                                if let Err(e) = out_tx.send(Message::Text(text.into())).await {
+                                    tracing::error!("Failed to send response over WS: {}", e);
                                     break;
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Failed to parse server message: {}", e);
+                                tracing::error!("Failed to parse server message: {}", e);
                             }
                         },
                         Message::Ping(p) => {
@@ -386,9 +376,9 @@ async fn main() {
                         continue;
                     }
                 }
-                eprintln!("Failed to connect: {}", e);
+                tracing::error!("Failed to connect: {}", e);
                 if attempt <= 2 {
-                    println!("Server might be cold starting. Please wait...");
+                    tracing::info!("Server might be cold starting. Please wait...");
                 }
                 // Exponential backoff before reconnect (max 15s)
                 let backoff = 2u64.saturating_pow(attempt.min(4));
@@ -405,7 +395,7 @@ async fn handle_proxy(
     local_base: &str,
     req_msg: ProxyRequest,
 ) -> ProxyResponse {
-    println!("-> CLIENT received proxy request for URI: {}", &req_msg.uri);
+    tracing::info!("-> CLIENT received proxy request for URI: {}", &req_msg.uri);
     // Build URL to local server
     let url = if req_msg.uri.starts_with('/') {
         format!("{}{}", local_base, req_msg.uri)
@@ -447,9 +437,7 @@ async fn handle_proxy(
     builder = builder.headers(headers);
 
     // Body
-    let body = general_purpose::STANDARD_NO_PAD
-        .decode(req_msg.body_b64.as_bytes())
-        .unwrap_or_default();
+    let body = tunly::decompress_body(&req_msg.body_b64, req_msg.is_compressed);
     if !body.is_empty() {
         builder = builder.body(body);
     }
@@ -462,9 +450,9 @@ async fn handle_proxy(
             let status = resp.status().as_u16();
             let resp_headers = headers_to_vec(resp.headers());
             let bytes = resp.bytes().await.unwrap_or_default();
-            let body_b64 = general_purpose::STANDARD_NO_PAD.encode(&bytes);
+            let (body_b64, is_compressed) = tunly::compress_body(&bytes);
             let dur_ms = start.elapsed().as_millis();
-            println!(
+            tracing::info!(
                 "LOCAL {} {} -> {} in {}ms",
                 method, req_msg.uri, status, dur_ms
             );
@@ -473,20 +461,23 @@ async fn handle_proxy(
                 status,
                 headers: resp_headers,
                 body_b64,
+                is_compressed,
             }
         }
         Err(err) => {
             let msg = format!("upstream error: {}", err);
             let dur_ms = start.elapsed().as_millis();
-            println!(
+            tracing::info!(
                 "LOCAL {} {} -> 502 in {}ms ({})",
                 method, req_msg.uri, dur_ms, err
             );
+            let (body_b64, is_compressed) = tunly::compress_body(msg.as_bytes());
             ProxyResponse {
                 id: req_msg.id,
                 status: 502,
                 headers: vec![("content-type".into(), "text/plain".into())],
-                body_b64: general_purpose::STANDARD_NO_PAD.encode(msg.as_bytes()),
+                body_b64,
+                is_compressed,
             }
         }
     }
