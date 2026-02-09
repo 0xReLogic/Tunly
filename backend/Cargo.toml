@@ -39,7 +39,7 @@ http2 = []
 
 # Platform-specific TLS backends
 [target.'cfg(windows)'.dependencies]
-reqwest = { version = "0.13.1", features = ["json", "gzip", "brotli", "deflate", "native-tls", "http2"] }
+reqwest = { version = "0.13.2", features = ["json", "gzip", "brotli", "deflate", "native-tls", "http2"] }
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 
 [target.'cfg(not(windows))'.dependencies]
