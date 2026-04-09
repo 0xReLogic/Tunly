@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::Parser;
-use rand::RngCore;
+use rand::Rng;
 use tokio::sync::{Mutex, RwLock};
 use tunly::{AppState, AuthMode, Metrics, SESSION_IDLE_TTL_SECS};
 

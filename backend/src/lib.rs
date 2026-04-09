@@ -25,7 +25,7 @@ use flate2::Compression;
 use futures::{SinkExt, StreamExt};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use prometheus::{Counter, Encoder, Gauge, Histogram, HistogramOpts, Registry, TextEncoder};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
