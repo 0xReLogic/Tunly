@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+    # No fixed rsa version available yet (RUSTSEC-2023-0071).
+    # Tunly uses HMAC JWT flow, not RSA private-key operations.
+    "RUSTSEC-2023-0071",
+]

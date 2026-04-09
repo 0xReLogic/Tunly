@@ -6,7 +6,11 @@ version = 2
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
-ignore = []
+ignore = [
+    # No patched rsa release yet; only affects RSA PKCS#1 v1.5 decryption timings.
+    # Tunly uses HS256 JWT flow and does not perform RSA private key decrypt/sign operations.
+    "RUSTSEC-2023-0071",
+]
 
 [licenses]
 version = 2
@@ -23,6 +27,7 @@ allow = [
     "BSL-1.0",
     "Unlicense",
     "LGPL-2.1-or-later",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
