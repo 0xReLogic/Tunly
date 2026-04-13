@@ -7,7 +7,7 @@ use std::{
 use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
 use futures::{SinkExt, StreamExt};
-use rand::RngCore;
+use rand::Rng;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
