@@ -45,7 +45,7 @@ tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 [target.'cfg(not(windows))'.dependencies]
 reqwest = { version = "0.13.1", features = ["json", "gzip", "brotli", "deflate", "http2"] }
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-native-roots"] }
-openssl = { version = "0.10.77", features = ["vendored"] }
+openssl = { version = "0.10.78", features = ["vendored"] }
 
 # Extreme optimization profile for release builds
 # This will make binaries MUCH smaller but takes longer to compile
