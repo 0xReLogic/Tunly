@@ -71,4 +71,4 @@ opt-level = "z"
 strip = true
 
 [dev-dependencies]
-axum-test = "18.7.0"
+axum-test = "20.0.0"
