@@ -183,7 +183,7 @@ async fn test_body_size_limit() {
     let response = server
         .post("/s/test-session/")
         .add_header(axum::http::header::CONTENT_TYPE, "application/octet-stream")
-        .json(&large_body)
+        .bytes(large_body.into())
         .await;
 
     assert_eq!(response.status_code(), StatusCode::PAYLOAD_TOO_LARGE);
