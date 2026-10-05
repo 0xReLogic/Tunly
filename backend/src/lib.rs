@@ -28,6 +28,7 @@ use prometheus::{Counter, Encoder, Gauge, Histogram, HistogramOpts, Registry, Te
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
+use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
@@ -39,6 +40,10 @@ pub const RL_MAX_PER_WINDOW: u32 = 10;
 // Per-IP rate limit for proxy requests: 120 requests per 60 seconds
 pub const PROXY_RL_WINDOW_SECS: u64 = 60;
 pub const PROXY_RL_MAX_PER_WINDOW: u32 = 120;
+
+fn fixed_token_matches(provided: &str, expected: &str) -> bool {
+    provided.as_bytes().ct_eq(expected.as_bytes()).into()
+}
 
 // Session idle TTL (seconds) before being GC-removed if no activity
 pub const SESSION_IDLE_TTL_SECS: u64 = 600;
@@ -285,7 +290,7 @@ pub async fn ws_handler(
     };
 
     let token_ok = match &state.auth_mode {
-        AuthMode::Fixed(expected) => token == *expected,
+        AuthMode::Fixed(expected) => fixed_token_matches(&token, expected),
         AuthMode::Ephemeral => {
             let ip = extract_real_ip(&addr, &headers);
             match decode::<Claims>(
@@ -1018,4 +1023,16 @@ pub async fn fallback_404(uri: Uri) -> Response {
         .body(axum::body::Body::from(body))
         .unwrap()
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fixed_token_matches;
+
+    #[test]
+    fn fixed_token_matches_only_equal_tokens() {
+        assert!(fixed_token_matches("secret-token", "secret-token"));
+        assert!(!fixed_token_matches("secret-tokeN", "secret-token"));
+        assert!(!fixed_token_matches("secret", "secret-token"));
+    }
 }
