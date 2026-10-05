@@ -251,6 +251,39 @@ Notes:
 
 ---
 
+## Dashboard & Monitoring
+
+Tunly includes a built-in web dashboard for monitoring active tunnels and requests in real-time.
+
+### Accessing the Dashboard
+
+When running with the frontend (Docker Compose):
+- **Dashboard**: http://localhost:3000/dashboard
+
+When running server-only, use the API directly:
+- **Active tunnels**: `GET http://localhost:8080/api/tunnels`
+- **Server stats**: `GET http://localhost:8080/api/stats`
+- **Request history**: `GET http://localhost:8080/api/requests`
+
+### Dashboard Features
+
+- **Tunnels View**: Monitor all active tunnels with session ID, request count, status, creation time, and last activity
+- **Requests Log**: Real-time request history showing method, URI, HTTP status, and latency
+- **Statistics**: Active tunnel count, total requests, uptime, and server status
+- **Settings**: View server configuration and system information
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tunnels` | GET | List active tunnels with metadata |
+| `/api/stats` | GET | Server statistics (active sessions, total requests, uptime) |
+| `/api/requests` | GET | Recent request history (last 50 requests) |
+
+All endpoints return JSON and auto-refresh every 5 seconds on the dashboard.
+
+---
+
 ## Environment & Deploy
 
 You can configure Tunly using environment variables. See the `.env.example` files in the root, `backend/`, and `frontend/` directories for templates.
