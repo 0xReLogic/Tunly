@@ -1,12 +1,13 @@
 [package]
 name = "tunly"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A lightweight, self-hosted HTTP tunnel for exposing local applications to the internet."
 repository = "https://github.com/0xReLogic/Tunly"
 homepage = "https://github.com/0xReLogic/Tunly"
 documentation = "https://docs.rs/tunly"
+readme = "../README.md"
 keywords = ["tunnel", "http", "proxy", "self-hosted", "localhost"]
 categories = ["network-programming", "command-line-utilities", "web-programming"]
 autobins = false
