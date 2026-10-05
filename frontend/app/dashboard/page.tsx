@@ -4,6 +4,15 @@ import { useState } from 'react';
 import { useDashboard } from '../../src/hooks/useDashboard';
 import { Button } from '../../src/components/ui/button';
 
+// Format bytes to human readable
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
 export default function DashboardPage() {
   const [tabValue, setTabValue] = useState(0);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
@@ -167,6 +176,8 @@ export default function DashboardPage() {
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Created</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Last Seen</th>
                               <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Requests</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Data In</th>
+                              <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Data Out</th>
                               <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700 dark:text-slate-300">Status</th>
                             </tr>
                           </thead>
@@ -186,6 +197,12 @@ export default function DashboardPage() {
                                 </td>
                                 <td className="py-3 px-4 text-sm text-right font-medium text-slate-900 dark:text-white">
                                   {tunnel.total_requests}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right font-mono text-slate-900 dark:text-white">
+                                  {formatBytes(tunnel.bytes_in || 0)}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-right font-mono text-slate-900 dark:text-white">
+                                  {formatBytes(tunnel.bytes_out || 0)}
                                 </td>
                                 <td className="py-3 px-4">
                                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">

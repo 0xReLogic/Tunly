@@ -85,6 +85,8 @@ pub struct DashboardTunnelInfo {
     pub created_at: u64,
     pub last_seen: u64,
     pub total_requests: u64,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
     pub status: String, // "active" or "idle"
 }
 
@@ -1163,12 +1165,16 @@ pub async fn api_tunnels(
             });
             let is_idle = last_seen > 30; // Idle if no activity for 30 seconds
             let request_count = sess.request_count.load(Ordering::SeqCst);
+            let bytes_in = sess.bytes_in.load(Ordering::SeqCst);
+            let bytes_out = sess.bytes_out.load(Ordering::SeqCst);
 
             DashboardTunnelInfo {
                 session_id: sid.clone(),
                 created_at: now - sess._created_at.elapsed().as_secs(),
                 last_seen: now - last_seen,
                 total_requests: request_count,
+                bytes_in,
+                bytes_out,
                 status: if is_idle {
                     "idle".to_string()
                 } else {
