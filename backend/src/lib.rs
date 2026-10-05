@@ -32,6 +32,7 @@ use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
+use rusqlite::{Connection, params};
 
 // Simple per-IP rate limit for /token: 10 requests per 60 seconds
 pub const RL_WINDOW_SECS: u64 = 60;
@@ -252,6 +253,72 @@ pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
         .header("Content-Type", encoder.format_type())
         .body(axum::body::Body::from(buffer))
         .unwrap()
+}
+
+// Initialize SQLite database for request logging (optional persistent storage)
+pub fn init_db(db_path: &str) -> Result<Connection, rusqlite::Error> {
+    let conn = Connection::open(db_path)?;
+    
+    // Create request_logs table with circular buffer pattern
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS request_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            method TEXT NOT NULL,
+            uri TEXT NOT NULL,
+            status INTEGER NOT NULL,
+            latency_ms INTEGER NOT NULL
+        )",
+        [],
+    )?;
+    
+    // Create index for efficient querying
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_timestamp ON request_logs(session_id, timestamp DESC)",
+        [],
+    )?;
+    
+    Ok(conn)
+}
+
+// Log request to database (with circular buffer cleanup to keep < 10k rows)
+pub fn log_request_to_db(
+    conn: &Connection,
+    session_id: &str,
+    method: &str,
+    uri: &str,
+    status: u16,
+    latency_ms: u128,
+) -> Result<(), rusqlite::Error> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    conn.execute(
+        "INSERT INTO request_logs (session_id, timestamp, method, uri, status, latency_ms) 
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![session_id, now, method, uri, status, latency_ms as i64],
+    )?;
+    
+    // Clean up old entries if > 10k rows
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM request_logs",
+        [],
+        |row| row.get(0),
+    )?;
+    
+    if count > 10000 {
+        conn.execute(
+            "DELETE FROM request_logs WHERE id IN (
+                SELECT id FROM request_logs ORDER BY id ASC LIMIT ?1
+            )",
+            params![count - 5000], // Keep 5000 most recent
+        )?;
+    }
+    
+    Ok(())
 }
 
 pub fn create_app(state: Arc<AppState>) -> Router {
