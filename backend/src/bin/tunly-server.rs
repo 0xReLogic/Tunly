@@ -1,12 +1,15 @@
 use std::{
     collections::HashMap,
     net::SocketAddr,
+    path::PathBuf,
     sync::{atomic::AtomicU64, Arc},
     time::{Duration, Instant},
 };
 
 use clap::Parser;
+use futures::StreamExt;
 use rand::Rng;
+use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio::sync::{Mutex, RwLock};
 use tunly::{AppState, AuthMode, Metrics, SESSION_IDLE_TTL_SECS};
 
@@ -40,12 +43,29 @@ struct ServerArgs {
     /// (Optional) Internal key to restrict /token access (env: TUNLY_INTERNAL_KEY)
     #[arg(long, env = "TUNLY_INTERNAL_KEY")]
     internal_key: Option<String>,
+
+    /// Domain(s) for automatic Let's Encrypt certificates via TLS-ALPN.
+    #[arg(long = "acme-domain", value_delimiter = ',')]
+    acme_domains: Vec<String>,
+
+    /// Email address(es) for ACME account contact information.
+    #[arg(long = "acme-email", value_delimiter = ',')]
+    acme_emails: Vec<String>,
+
+    /// Use the Let's Encrypt staging environment instead of production.
+    #[arg(long, default_value_t = false)]
+    acme_staging: bool,
+
+    /// Persistent ACME account and certificate cache directory.
+    #[arg(long, default_value = "./.tunly/acme")]
+    acme_cache: PathBuf,
 }
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
     let args = ServerArgs::parse();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     // Auth mode: if --token or TUNLY_TOKEN provided => Fixed, else Ephemeral tokens via /token
     let auth_mode = if let Some(t) = args
@@ -152,9 +172,40 @@ async fn main() {
         .parse()
         .expect("--bind must be like 0.0.0.0:9000 or use --host/--port");
 
-    tracing::info!("Tunly Server listening on http://{}", addr);
+    if args.acme_domains.is_empty() {
+        tracing::info!("Tunly Server listening on http://{}", addr);
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        let svc = app.into_make_service_with_connect_info::<SocketAddr>();
+        axum::serve(listener, svc).await.unwrap();
+    } else {
+        tracing::info!(
+            "Tunly Server listening with automatic TLS for {}",
+            args.acme_domains.join(", ")
+        );
+        let mut acme_state = AcmeConfig::new(args.acme_domains)
+            .contact(
+                args.acme_emails
+                    .iter()
+                    .map(|email| format!("mailto:{email}")),
+            )
+            .cache_option(Some(DirCache::new(args.acme_cache)))
+            .directory_lets_encrypt(!args.acme_staging)
+            .state();
+        let acceptor = acme_state.axum_acceptor(acme_state.default_rustls_config());
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    let svc = app.into_make_service_with_connect_info::<SocketAddr>();
-    axum::serve(listener, svc).await.unwrap();
+        tokio::spawn(async move {
+            while let Some(event) = acme_state.next().await {
+                match event {
+                    Ok(event) => tracing::info!("ACME event: {:?}", event),
+                    Err(error) => tracing::error!("ACME error: {:?}", error),
+                }
+            }
+        });
+
+        axum_server::bind(addr)
+            .acceptor(acceptor)
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .unwrap();
+    }
 }

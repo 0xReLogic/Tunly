@@ -211,14 +211,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd backend/target/${{ matrix.target }}/release
-          tar czf ${{ matrix.artifact_name }}.tar.gz tunly-client tunly-server
+          tar czf ${{ matrix.artifact_name }}.tar.gz tunly tunly-client tunly-server
           mv ${{ matrix.artifact_name }}.tar.gz ${{ github.workspace }}/
 
       - name: Package binaries (Windows)
         if: runner.os == 'Windows'
         run: |
           cd backend/target/${{ matrix.target }}/release
-          7z a ${{ matrix.artifact_name }}.zip tunly-client.exe tunly-server.exe
+          7z a ${{ matrix.artifact_name }}.zip tunly.exe tunly-client.exe tunly-server.exe
           move ${{ matrix.artifact_name }}.zip ${{ github.workspace }}/
         shell: cmd
 
@@ -242,7 +242,7 @@ jobs:
 
   publish-crate:
     name: Publish crate to crates.io
-    needs: build-rust
+    needs: [build-rust, package-macos-universal]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -268,9 +268,84 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
 
+  package-macos-universal:
+    name: Package macOS Universal Binary
+    needs: [create-release, build-rust]
+    runs-on: macos-latest
+    steps:
+      - name: Download architecture-specific binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          mkdir -p artifacts arm64 x86_64 universal
+          gh release download "$VERSION" \
+            --repo "${{ github.repository }}" \
+            --pattern 'tunly-macos-aarch64.tar.gz' \
+            --pattern 'tunly-macos-x86_64.tar.gz' \
+            --dir artifacts
+          tar xzf artifacts/tunly-macos-aarch64.tar.gz -C arm64
+          tar xzf artifacts/tunly-macos-x86_64.tar.gz -C x86_64
+
+      - name: Create universal binaries
+        run: |
+          lipo -create arm64/tunly-client x86_64/tunly-client -output universal/tunly-client
+          lipo -create arm64/tunly-server x86_64/tunly-server -output universal/tunly-server
+          lipo -create arm64/tunly x86_64/tunly -output universal/tunly
+          lipo -info universal/tunly-client
+          lipo -info universal/tunly-server
+          lipo -info universal/tunly
+          tar czf tunly-macos-universal.tar.gz -C universal tunly tunly-client tunly-server
+
+      - name: Upload universal macOS asset
+        uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: ./tunly-macos-universal.tar.gz
+
+  homebrew-formula:
+    name: Generate Homebrew formula
+    needs: [create-release, package-macos-universal]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate formula from release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          gh release download "$VERSION" \
+            --repo "${{ github.repository }}" \
+            --pattern 'tunly-macos-universal.tar.gz' \
+            --dir .
+          SHA256=$(sha256sum tunly-macos-universal.tar.gz | cut -d' ' -f1)
+          RELEASE_VERSION="${VERSION#v}"
+          cat > tunly.rb <<EOF
+          class Tunly < Formula
+            desc "Lightweight, self-hosted HTTP tunnel"
+            homepage "https://github.com/${{ github.repository }}"
+            version "${RELEASE_VERSION}"
+            url "https://github.com/${{ github.repository }}/releases/download/${VERSION}/tunly-macos-universal.tar.gz"
+            sha256 "${SHA256}"
+
+            def install
+              bin.install "tunly", "tunly-client", "tunly-server"
+            end
+          end
+          EOF
+
+      - name: Upload Homebrew formula
+        uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: ./tunly.rb
+
   publish-release:
     name: Publish GitHub Release
-    needs: [create-release, build-rust, publish-crate]
+    needs: [create-release, build-rust, package-macos-universal, publish-crate, homebrew-formula]
     runs-on: ubuntu-latest
     steps:
       - name: Publish draft release

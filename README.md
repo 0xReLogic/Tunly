@@ -29,6 +29,50 @@ tunly-client --remote-host your-server.com:8080 --local 127.0.0.1:3000
 
 Your localhost is now reachable through a shareable Tunly URL.
 
+### macOS
+
+Apple Silicon and Intel Macs can use the same universal download:
+
+```bash
+brew install https://github.com/0xReLogic/Tunly/releases/latest/download/tunly.rb
+```
+
+Or install manually:
+
+```bash
+curl -LO https://github.com/0xReLogic/Tunly/releases/latest/download/tunly-macos-universal.tar.gz
+tar xzf tunly-macos-universal.tar.gz
+sudo install -m 755 tunly tunly-client tunly-server /usr/local/bin/
+```
+
+The universal binary runs natively on both Apple Silicon and Intel Macs.
+
+Check the installation and optionally keep the client connected in the background:
+
+```bash
+tunly doctor
+tunly install --remote-host tunly.allenarch.dev:8080 --local 127.0.0.1:3000 \
+  --token-url https://tunly.allenarch.dev/token
+```
+
+Remove the background service with `tunly uninstall`.
+
+### Automatic HTTPS with ACME
+
+Point your domain DNS at the Tunly server, expose port `443`, and let Tunly
+obtain and renew a Let's Encrypt certificate automatically:
+
+```bash
+tunly-server --bind 0.0.0.0:443 \
+  --acme-domain tunly.allenarch.dev \
+  --acme-email you@example.com \
+  --acme-cache /var/lib/tunly/acme
+```
+
+Tunly uses TLS-ALPN validation and persists the ACME account and certificate
+cache so renewals do not require a server restart. Use `--acme-staging` while
+testing to avoid Let's Encrypt production rate limits.
+
 ---
 
 ## Motivation
@@ -51,6 +95,8 @@ Your localhost is now reachable through a shareable Tunly URL.
 - **Production Built**: Lightweight binary with persistent connection pooling and enforced security limits.
 - **Self-Hostable**: Easily deploy on any VPS or Cloud (DigitalOcean, Vultr, Koyeb, etc.).
 - **Privacy First**: 100% open-source with zero tracking or telemetry.
+- **Mac Friendly**: Universal Apple Silicon/Intel binaries, `tunly doctor`, and LaunchAgent helpers.
+- **Automatic HTTPS**: Optional Let's Encrypt certificates with persistent cache and renewal.
 
 ---
 
