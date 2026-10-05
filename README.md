@@ -92,7 +92,7 @@ testing to avoid Let's Encrypt production rate limits.
 - **Simple**: connect a local app and share one URL without creating an account.
 - **Secure by default**: ephemeral, single-use tokens are bound to the client IP and session.
 - **Fast**: native Rust, WebSockets, HTTP/2, compression, and a small binary footprint.
-- **Observable**: structured logs, Prometheus metrics, and per-session request history.
+- **Observable**: built-in dashboard with real-time tunnel monitoring, request logs, and bandwidth tracking. Structured logs and Prometheus metrics included.
 - **Cross-platform**: prebuilt binaries and `cargo install` for Linux, macOS, and Windows.
 
 ---
@@ -101,7 +101,7 @@ testing to avoid Let's Encrypt production rate limits.
 
 ### Docker (Recommended)
 
-Fastest way to deploy Tunly server + token UI:
+Fastest way to deploy Tunly server + dashboard:
 
 ```bash
 git clone https://github.com/0xReLogic/Tunly
@@ -111,9 +111,9 @@ docker-compose up
 
 Then:
 - **Server**: http://localhost:8080
-- **Frontend (token UI)**: http://localhost:3000
+- **Dashboard**: http://localhost:3000
 
-Both services run automatically. Get a token from the UI and start tunneling.
+The dashboard shows active tunnels, request logs, bandwidth usage, and system statistics. Get a token from the dashboard and start tunneling.
 
 ### Self-hosted setup (Binary)
 
@@ -136,9 +136,9 @@ Both services run automatically. Get a token from the UI and start tunneling.
 > - Default auth uses header `Authorization: Bearer <token>`. Query `?token=...` works only if server enables `--allow-token-query`.
 > - For self-host without TLS, pass `--use-wss=false` so the client uses `ws://` (the flag accepts an explicit boolean, e.g., `--use-wss=false`).
 
-### Deploy Frontend Separately (Optional)
+### Deploy Dashboard Separately (Optional)
 
-If you want to run the token UI without Docker:
+If you want to run the dashboard without Docker:
 
 1. **Install dependencies**:
    ```bash
