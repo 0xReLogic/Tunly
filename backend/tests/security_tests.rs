@@ -65,7 +65,7 @@ async fn test_concurrent_proxy_flooding() {
 
     let app =
         create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let server = Arc::new(TestServer::new(app).unwrap());
+    let server = Arc::new(TestServer::new(app));
 
     let mut handles = vec![];
     for _ in 0..50 {
@@ -101,7 +101,7 @@ async fn test_server_health_check() {
 
     let app =
         create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     let response = server.get("/").await;
     // The root might return 404 or something else depending on routing
@@ -127,7 +127,7 @@ async fn test_proxy_rate_limiting() {
 
     let app =
         create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Send 120 requests to a proxy route.
     // They will fail with 503 "no tunnel client for session" but should still count towards rate limit.
@@ -175,7 +175,7 @@ async fn test_body_size_limit() {
 
     let app =
         create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // Create a 2.1 MB body
     let large_body = vec![0u8; 2100 * 1024];
@@ -183,7 +183,7 @@ async fn test_body_size_limit() {
     let response = server
         .post("/s/test-session/")
         .add_header(axum::http::header::CONTENT_TYPE, "application/octet-stream")
-        .json(&large_body)
+        .bytes(large_body.into())
         .await;
 
     assert_eq!(response.status_code(), StatusCode::PAYLOAD_TOO_LARGE);
@@ -207,7 +207,7 @@ async fn test_jwt_auth_flow() {
 
     let app =
         create_app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let server = TestServer::new(app).unwrap();
+    let server = TestServer::new(app);
 
     // 1. Get Token
     let token_resp = server.get("/token").await;

@@ -105,7 +105,8 @@ jobs:
 
       - name: Run security audit
         working-directory: ./backend
-        run: cargo audit
+        # rsa has no fixed release; it is already documented in backend/deny.toml.
+        run: cargo audit --ignore RUSTSEC-2023-0071
 
   cargo-deny:
     name: Cargo Deny
