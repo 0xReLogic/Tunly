@@ -498,7 +498,7 @@ pub async fn client_ws(stream: WebSocket, state: Arc<AppState>, sid: String) {
     let read_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_rx.next().await {
             // update last_seen on any inbound WS message
-            if let Some(sess) = { read_state.sessions.read().await.get(&read_sid).cloned() } {
+            if let Some(sess) = read_state.sessions.read().await.get(&read_sid).cloned() {
                 let mut ls = sess.last_seen.lock().await;
                 *ls = Instant::now();
             }
