@@ -17,6 +17,17 @@ local machine, and share the public URL.
 
 [Download Tunly](https://github.com/0xReLogic/Tunly/releases) · [Quick Start](#self-hosted-setup) · [Report a bug](https://github.com/0xReLogic/Tunly/issues/new)
 
+## Install
+
+Build and install the CLI from crates.io:
+
+```bash
+cargo install tunly --locked
+```
+
+Or download a prebuilt archive from [Releases](https://github.com/0xReLogic/Tunly/releases).
+Every archive includes `tunly`, `tunly-server`, and `tunly-client`.
+
 ![Tunly demo: a local app becoming a public URL](docs/tunly-demo.gif)
 
 ```bash
@@ -75,66 +86,20 @@ testing to avoid Let's Encrypt production rate limits.
 
 ---
 
-## Motivation
+## Why Tunly?
 
-**Tunly** is built for developers, makers, and anyone who wants:
-
-- **Access local applications from anywhere** without hassle
-- **No login, no dashboard, no limits**
-- **100% open source** and self-hostable
-- **Easy distribution**: simple setup with token-based authentication
-
----
-
-## Key Features
-
-- **Zero Account Setup**: No login, dashboard, or vendor account required.
-- **Advanced Security**: Secure **JWT-based authentication** with IP binding and single-use protection.
-- **High Performance**: Native **HTTP/2 support** with multiplexing and transparent **Zlib compression**.
-- **Full Observability**: Prometheus metrics (`/metrics`), structured JSON logging, and a built-in session activity viewer (`/_log`).
-- **Production Built**: Lightweight binary with persistent connection pooling and enforced security limits.
-- **Self-Hostable**: Easily deploy on any VPS or Cloud (DigitalOcean, Vultr, Koyeb, etc.).
-- **Privacy First**: 100% open-source with zero tracking or telemetry.
-- **Mac Friendly**: Universal Apple Silicon/Intel binaries, `tunly doctor`, and LaunchAgent helpers.
-- **Automatic HTTPS**: Optional Let's Encrypt certificates with persistent cache and renewal.
+- **Self-hosted**: run the server on your VPS and keep traffic under your control.
+- **Simple**: connect a local app and share one URL without creating an account.
+- **Secure by default**: ephemeral, single-use tokens are bound to the client IP and session.
+- **Fast**: native Rust, WebSockets, HTTP/2, compression, and a small binary footprint.
+- **Observable**: structured logs, Prometheus metrics, and per-session request history.
+- **Cross-platform**: prebuilt binaries and `cargo install` for Linux, macOS, and Windows.
 
 ---
 
-## When to Use Tunly?
+## Quick Start
 
-### **Demo & Presentations**
-Client wants direct access to your app? But your project is still on localhost?  
-**Solution**: Tunly makes your localhost accessible from anywhere in 30 seconds.
-
-### **Client Testing**
-Client needs to test new features but you haven't deployed to production yet?  
-**Solution**: Share tunnel URL, client can test immediately without complex setup.
-
-### **Development & Debugging**
-Remote work but need access to apps on your home computer?  
-**Solution**: Tunnel from home to office, access applications from anywhere.
-
-### **Mobile Testing**
-Need to test web apps on phone but they only run on laptop?  
-**Solution**: Tunnel laptop, access from phone via WiFi or data.
-
-### **Quick Prototyping**
-Have a new idea, want to share with friends but haven't deployed yet?  
-**Solution**: Tunnel localhost, share URL, friends can try immediately.
-
-### **Private Testing**
-Want to test apps on the internet without complex setup?  
-**Solution**: Tunly provides simple, self-hosted tunneling without hassle.
-
----
-
-## How to Use
-
-### Modes
-- **Self-host**: Run your own server on a VPS or cloud platform and point the client to it.
-- **Local testing**: Run both server and client locally for development.
-
-### Self-Hosted Setup
+### Self-hosted setup
 
 1. **Download** `tunly-client` and `tunly-server` for your OS from [Releases](https://github.com/0xReLogic/Tunly/releases)
 2. **Start the server** on your VPS or cloud:
@@ -155,7 +120,7 @@ Want to test apps on the internet without complex setup?
 > - Default auth uses header `Authorization: Bearer <token>`. Query `?token=...` works only if server enables `--allow-token-query`.
 > - For self-host without TLS, pass `--use-wss=false` so the client uses `ws://` (the flag accepts an explicit boolean, e.g., `--use-wss=false`).
 
-### Quick start (from source, via Cargo)
+### Build from source
 
 If building from source:
 
