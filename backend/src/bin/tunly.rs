@@ -152,7 +152,7 @@ fn install(args: InstallArgs) -> io::Result<()> {
 
     let plist = launch_agent_plist(&args.label, &program_arguments, &log_dir);
     File::create(&plist_path)?.write_all(plist.as_bytes())?;
-    let domain = format!("gui/{}", unsafe { libc::getuid() });
+    let domain = launchctl_domain()?;
 
     let _ = Command::new("launchctl")
         .args(["bootout", &domain, plist_path.to_str().unwrap_or_default()])
@@ -177,7 +177,7 @@ fn install(args: InstallArgs) -> io::Result<()> {
 fn uninstall(args: UninstallArgs) -> io::Result<()> {
     require_macos()?;
     let plist_path = launch_agents_dir()?.join(format!("{}.plist", args.label));
-    let domain = format!("gui/{}", unsafe { libc::getuid() });
+    let domain = launchctl_domain()?;
     let _ = Command::new("launchctl")
         .args(["bootout", &domain, plist_path.to_str().unwrap_or_default()])
         .status();
@@ -218,6 +218,18 @@ fn require_macos() -> io::Result<()> {
         Ok(())
     } else {
         Err(io::Error::other("this command is only supported on macOS"))
+    }
+}
+
+fn launchctl_domain() -> io::Result<String> {
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(format!("gui/{}", unsafe { libc::getuid() }));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(io::Error::other("LaunchAgents are only available on macOS"))
     }
 }
 
