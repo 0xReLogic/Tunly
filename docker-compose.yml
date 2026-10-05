@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  tunly-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TUNLY_VERSION: v0.3.1
+    ports:
+      - "8080:8080"
+    environment:
+      # Optional: Set a fixed token for authentication
+      # TUNLY_TOKEN: "your-secret-token-here"
+      
+      # Optional: Internal key to protect /token endpoint
+      # TUNLY_INTERNAL_KEY: "your-internal-key-here"
+    volumes:
+      # Optional: Persist ACME certificates
+      - tunly_acme:/var/lib/tunly/acme
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  tunly-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_BASE_URL: "http://tunly-server:8080"
+      TUNLY_INTERNAL_KEY: ""
+    depends_on:
+      - tunly-server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  tunly_acme:
+    driver: local
