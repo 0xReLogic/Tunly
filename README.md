@@ -10,7 +10,24 @@
 [![Frontend CI](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml)
 [![Release](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml)
 
-**Tunly** is a simple, lightweight, and open-source HTTP tunnel solution for exposing local applications to the internet.
+**Tunly** is a self-hosted HTTP tunnel for sharing a local app from anywhere.
+
+No account. No dashboard. No vendor lock-in. Run one small server, connect your
+local machine, and share the public URL.
+
+[Download Tunly](https://github.com/0xReLogic/Tunly/releases) · [Quick Start](#self-hosted-setup) · [Report a bug](https://github.com/0xReLogic/Tunly/issues/new)
+
+![Tunly demo: a local app becoming a public URL](docs/tunly-demo.gif)
+
+```bash
+# On your VPS
+tunly-server --bind 0.0.0.0:8080
+
+# On your laptop
+tunly-client --remote-host your-server.com:8080 --local 127.0.0.1:3000
+```
+
+Your localhost is now reachable through a shareable Tunly URL.
 
 ---
 
@@ -27,7 +44,7 @@
 
 ## Key Features
 
-- **Zero Configuration**: No login, no dashboard, and no complex registration.
+- **Zero Account Setup**: No login, dashboard, or vendor account required.
 - **Advanced Security**: Secure **JWT-based authentication** with IP binding and single-use protection.
 - **High Performance**: Native **HTTP/2 support** with multiplexing and transparent **Zlib compression**.
 - **Full Observability**: Prometheus metrics (`/metrics`), structured JSON logging, and a built-in session activity viewer (`/_log`).
@@ -75,8 +92,8 @@ Want to test apps on the internet without complex setup?
 
 1. **Download** `tunly-client` and `tunly-server` for your OS from [Releases](https://github.com/0xReLogic/Tunly/releases)
 2. **Start the server** on your VPS or cloud:
-   ```bash
-   tunly-server --port 8080
+  ```bash
+  tunly-server --bind 0.0.0.0:8080
    ```
 3. **Run the client** locally:
    ```bash

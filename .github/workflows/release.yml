@@ -19,8 +19,34 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  validate:
+    name: Validate Rust crate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        working-directory: ./backend
+        run: cargo fmt --all -- --check
+
+      - name: Run tests
+        working-directory: ./backend
+        run: cargo test --all-targets --all-features
+
+      - name: Run clippy
+        working-directory: ./backend
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
   create-release:
     name: Create Release
+    needs: validate
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -46,7 +72,7 @@ jobs:
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
           name: Tunly ${{ steps.get_version.outputs.version }}
-          draft: false
+          draft: true
           prerelease: false
           generate_release_notes: true
           body: |
@@ -59,7 +85,7 @@ jobs:
             
             #### Hosting your own Server (VPS)
             ```bash
-            ./tunly-server --port 8080
+            ./tunly-server --bind 0.0.0.0:8080
             ```
             
             #### Exposing Local App (Client)
@@ -213,3 +239,42 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           files: ./${{ matrix.artifact_name }}.zip
+
+  publish-crate:
+    name: Publish crate to crates.io
+    needs: build-rust
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Check crates.io token
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "CARGO_REGISTRY_TOKEN secret is required to publish tunly." >&2
+            exit 1
+          fi
+
+      - name: Publish tunly crate
+        working-directory: ./backend
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked --token "$CARGO_REGISTRY_TOKEN"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [create-release, build-rust, publish-crate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: gh release edit "$VERSION" --repo "${{ github.repository }}" --draft=false
