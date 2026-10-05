@@ -63,28 +63,26 @@ reqwest = { version = "0.13.1", features = ["json", "gzip", "brotli", "deflate",
 tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-native-roots"] }
 openssl = { version = "0.10.77", features = ["vendored"] }
 
-# Extreme optimization profile for release builds
-# This will make binaries MUCH smaller but takes longer to compile
+# Balanced release profile - fast compile + reasonable size
 [profile.release]
-# Optimize for size (z = most aggressive size optimization)
-opt-level = "z"
+# Optimize for balance (2 = good optimization, faster compile than z)
+opt-level = 2
 
-# Enable Link Time Optimization (fat = most aggressive, slower compile)
-lto = "fat"
+# Enable Link Time Optimization (thin = faster compile than fat)
+lto = "thin"
 
-# Single codegen unit for better optimization (slower compile, smaller binary)
-codegen-units = 1
+# 16 codegen units = good middle ground (faster than 1)
+codegen-units = 16
 
-# Strip symbols from binary (smaller size, no debug info)
-strip = true
+# Keep symbols for debugging but smaller
+strip = false
 
-# Abort on panic instead of unwinding (smaller binary)
+# Abort on panic
 panic = "abort"
 
-# Additional size optimizations for all dependencies
+# Size optimization for dependencies only if needed
 [profile.release.package."*"]
-opt-level = "z"
-strip = true
+opt-level = 2
 
 [dev-dependencies]
 axum-test = "20.0.0"
