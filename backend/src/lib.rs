@@ -76,6 +76,30 @@ pub struct AccessLogEntry {
     pub status: u16,
     pub dur_ms: u128,
 }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DashboardTunnelInfo {
+    pub session_id: String,
+    pub created_at: u64,
+    pub last_seen: u64,
+    pub total_requests: u64,
+    pub status: String, // "active" or "idle"
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DashboardStats {
+    pub active_sessions: usize,
+    pub total_requests: u64,
+    pub uptime_secs: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DashboardRequest {
+    pub timestamp: u64,
+    pub method: String,
+    pub uri: String,
+    pub status: u16,
+    pub latency_ms: u128,
+}
 
 #[derive(Debug)]
 pub struct SessionState {
@@ -84,6 +108,7 @@ pub struct SessionState {
     pub _created_at: Instant,
     pub last_seen: Mutex<Instant>,
     pub access_log: Mutex<Vec<AccessLogEntry>>, // ring buffer (last N)
+    pub request_count: AtomicU64, // Total requests for this tunnel
 }
 
 pub struct Metrics {
@@ -235,6 +260,9 @@ pub fn create_app(state: Arc<AppState>) -> Router {
         .route("/ws", get(ws_handler))
         .route("/token", get(token_endpoint))
         .route("/healthz", get(health))
+        .route("/api/tunnels", get(api_tunnels))
+        .route("/api/stats", get(api_stats))
+        .route("/api/requests", get(api_requests))
         .route("/_next/{*path}", any(next_asset_redirect))
         .route("/s/{sid}/_log", get(session_log))
         .route("/s/{sid}/", any(proxy_handler_root))
@@ -475,6 +503,7 @@ pub async fn client_ws(stream: WebSocket, state: Arc<AppState>, sid: String) {
         _created_at: Instant::now(),
         last_seen: Mutex::new(Instant::now()),
         access_log: Mutex::new(Vec::new()),
+        request_count: AtomicU64::new(0),
     });
     {
         let mut sessions = state.sessions.write().await;
@@ -899,6 +928,9 @@ pub async fn proxy_logic(
             log.drain(0..drop_n);
         }
     }
+    // Increment request counter for this session
+    sess.request_count.fetch_add(1, Ordering::SeqCst);
+    
     tracing::info!(
         "PROXY {} {} -> {} in {}ms (sid={})",
         method,
@@ -1023,6 +1055,94 @@ pub async fn fallback_404(uri: Uri) -> Response {
         .body(axum::body::Body::from(body))
         .unwrap()
         .into_response()
+}
+
+// Dashboard API: Get list of active tunnels
+pub async fn api_tunnels(
+    State(state): State<Arc<AppState>>,
+) -> axum::response::Json<Vec<DashboardTunnelInfo>> {
+    let sessions = state.sessions.read().await;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let tunnels: Vec<_> = sessions
+        .iter()
+        .map(|(sid, sess)| {
+            let last_seen = futures::executor::block_on(async {
+                let ls = sess.last_seen.lock().await;
+                ls.elapsed().as_secs()
+            });
+            let is_idle = last_seen > 30; // Idle if no activity for 30 seconds
+            let request_count = sess.request_count.load(Ordering::SeqCst);
+
+            DashboardTunnelInfo {
+                session_id: sid.clone(),
+                created_at: now - sess._created_at.elapsed().as_secs(),
+                last_seen: now - last_seen,
+                total_requests: request_count,
+                status: if is_idle {
+                    "idle".to_string()
+                } else {
+                    "active".to_string()
+                },
+            }
+        })
+        .collect();
+
+    axum::response::Json(tunnels)
+}
+
+// Dashboard API: Get server statistics
+pub async fn api_stats(
+    State(state): State<Arc<AppState>>,
+) -> axum::response::Json<DashboardStats> {
+    let sessions = state.sessions.read().await;
+    let total_requests: u64 = sessions
+        .iter()
+        .map(|(_, sess)| sess.request_count.load(Ordering::SeqCst))
+        .sum();
+
+    axum::response::Json(DashboardStats {
+        active_sessions: sessions.len(),
+        total_requests,
+        uptime_secs: 0, // TODO: Track server uptime
+    })
+}
+
+// Dashboard API: Get recent requests
+pub async fn api_requests(
+    State(state): State<Arc<AppState>>,
+) -> axum::response::Json<Vec<DashboardRequest>> {
+    let sessions = state.sessions.read().await;
+    let mut all_requests = Vec::new();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    for (_sid, sess) in sessions.iter() {
+        let log = futures::executor::block_on(async {
+            sess.access_log.lock().await.clone()
+        });
+
+        for entry in log {
+            all_requests.push(DashboardRequest {
+                timestamp: now, // TODO: Add timestamp to AccessLogEntry
+                method: entry.method,
+                uri: entry.uri,
+                status: entry.status,
+                latency_ms: entry.dur_ms,
+            });
+        }
+    }
+
+    // Sort by timestamp descending (newest first)
+    all_requests.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    axum::response::Json(all_requests)
 }
 
 #[cfg(test)]
