@@ -21,6 +21,7 @@ import { useDashboard } from '../hooks/useDashboard';
 import TunnelsCard from '../components/dashboard/TunnelsCard';
 import RequestsCard from '../components/dashboard/RequestsCard';
 import StatsCard from '../components/dashboard/StatsCard';
+import SettingsCard from '../components/dashboard/SettingsCard';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -95,6 +96,7 @@ export default function DashboardPage() {
                   >
                     <Tab label={`Tunnels (${tunnels.length})`} />
                     <Tab label={`Requests (${requests.length})`} />
+                    <Tab label="Settings" />
                   </Tabs>
 
                   <TabPanel value={tabValue} index={0}>
@@ -103,6 +105,10 @@ export default function DashboardPage() {
 
                   <TabPanel value={tabValue} index={1}>
                     <RequestsCard requests={requests} />
+                  </TabPanel>
+
+                  <TabPanel value={tabValue} index={2}>
+                    <SettingsCard />
                   </TabPanel>
                 </Paper>
               </>
