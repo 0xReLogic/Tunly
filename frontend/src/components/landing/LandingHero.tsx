@@ -83,15 +83,14 @@ export default function LandingHero() {
       
       <Stack spacing={4} alignItems="center">
         <GradientTitle variant="h1">
-          Bagikan Aplikasi Lokal Anda
+          Share Your Local Apps
           <br />
-          Kepada Siapa Saja, Secara Instan
+          Instantly, Securely, Everywhere
         </GradientTitle>
         
         <SubtitleText>
-          Tunly membuat terowongan aman ke server development lokal Anda, 
-          membuatnya dapat diakses dari mana saja di internet. 
-          Tanpa setup rumit, tanpa masalah port forwarding.
+          Create secure tunnels to your local development server. 
+          Share with anyone, instantly. No complex setup. No port forwarding headaches.
         </SubtitleText>
         
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
@@ -100,7 +99,7 @@ export default function LandingHero() {
             size="large"
             onClick={scrollToToken}
           >
-            Mulai Gratis
+            Get Started Free
           </CTAButton>
           <Button 
             variant="outlined" 
@@ -117,13 +116,13 @@ export default function LandingHero() {
               }
             }}
           >
-            Pelajari Lebih Lanjut
+            View Dashboard
           </Button>
         </Stack>
         
         <Box sx={{ mt: 4, opacity: 0.7 }}>
           <Typography variant="body2" color="text.secondary">
-            Selalu gratis • Aman secara default • Setup dalam hitungan detik
+            Always free • Secure by default • Setup in seconds
           </Typography>
         </Box>
       </Stack>

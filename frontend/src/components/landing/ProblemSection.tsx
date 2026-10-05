@@ -45,10 +45,10 @@ export default function ProblemSection() {
                 backgroundClip: 'text',
               }}
             >
-              Masalah yang Dihadapi Setiap Developer
+              The Problem Every Developer Faces
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ maxWidth: '600px', mx: 'auto' }}>
-              Anda telah membangun sesuatu yang luar biasa secara lokal, tapi membagikannya adalah mimpi buruk
+              You've built something amazing locally, but sharing it is a nightmare
             </Typography>
           </Box>
 
@@ -56,23 +56,23 @@ export default function ProblemSection() {
             <ProblemCard sx={{ flex: 1 }}>
               <CardContent sx={{ p: 4 }}>
                 <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: '#dc2626' }}>
-                  Cara Lama
+                  The Old Way
                 </Typography>
                 <Stack spacing={2}>
                   <Typography variant="body1">
-                    • Konfigurasi port forwarding router
+                    • Configure router port forwarding
                   </Typography>
                   <Typography variant="body1">
-                    • Berurusan dengan alamat IP dinamis
+                    • Deal with dynamic IP addresses
                   </Typography>
                   <Typography variant="body1">
-                    • Khawatir tentang kerentanan keamanan
+                    • Worry about security vulnerabilities
                   </Typography>
                   <Typography variant="body1">
-                    • Mengirim screenshot alih-alih demo langsung
+                    • Send screenshots instead of live demos
                   </Typography>
                   <Typography variant="body1">
-                    • Membuang waktu berjam-jam untuk konfigurasi jaringan
+                    • Waste hours on network configuration
                   </Typography>
                 </Stack>
               </CardContent>
@@ -87,23 +87,23 @@ export default function ProblemSection() {
             <SolutionCard sx={{ flex: 1 }}>
               <CardContent sx={{ p: 4 }}>
                 <Typography variant="h5" sx={{ fontWeight: 700, mb: 3, color: '#059669' }}>
-                  Cara Tunly
+                  The Tunly Way
                 </Typography>
                 <Stack spacing={2}>
                   <Typography variant="body1">
-                    • Satu perintah, URL publik instan
+                    • One command, instant public URL
                   </Typography>
                   <Typography variant="body1">
-                    • Terowongan HTTPS aman secara default
+                    • Secure HTTPS tunnel by default
                   </Typography>
                   <Typography variant="body1">
-                    • Bagikan demo langsung dengan segera
+                    • Share live demos instantly
                   </Typography>
                   <Typography variant="body1">
-                    • Bekerja dari mana saja, jaringan apa saja
+                    • Works from anywhere, any network
                   </Typography>
                   <Typography variant="body1">
-                    • Tanpa konfigurasi sama sekali
+                    • Zero configuration needed
                   </Typography>
                 </Stack>
               </CardContent>

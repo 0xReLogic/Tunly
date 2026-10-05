@@ -94,10 +94,10 @@ export default function FeaturesSection() {
                 backgroundClip: 'text',
               }}
             >
-              Mengapa Developer Menyukai Tunly
+              Why Developers Love Tunly
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ maxWidth: '600px', mx: 'auto' }}>
-              Semua yang Anda butuhkan untuk membagikan karya development lokal Anda dengan dunia
+              Everything you need to share your development work with the world
             </Typography>
           </Box>
 
