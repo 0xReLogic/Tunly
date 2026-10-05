@@ -1,27 +1,34 @@
-FROM alpine:3.20
+FROM --platform=$BUILDPLATFORM alpine:3.20 AS downloader
 
-# Install ca-certificates for HTTPS and curl
-RUN apk add --no-cache ca-certificates curl
-
-# Set version (can be overridden at build time)
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
 ARG TUNLY_VERSION=v0.3.0
-ARG TARGETARCH
 
-# Create app directory
-WORKDIR /app
+WORKDIR /tmp
 
-# Download and extract the appropriate binary based on architecture
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
+RUN apk add --no-cache curl tar && \
+    if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
       BINARY="tunly-linux-x86_64.tar.gz"; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
+    elif [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
       BINARY="tunly-linux-aarch64.tar.gz"; \
     else \
-      echo "Unsupported architecture: $TARGETARCH" && exit 1; \
+      echo "Unsupported platform: $TARGETPLATFORM" && exit 1; \
     fi && \
     curl -L "https://github.com/0xReLogic/Tunly/releases/download/${TUNLY_VERSION}/${BINARY}" -o tunly.tar.gz && \
     tar -xzf tunly.tar.gz && \
-    rm tunly.tar.gz && \
-    chmod +x tunly tunly-server tunly-client
+    rm tunly.tar.gz
+
+# Runtime stage - minimal image
+FROM alpine:3.20
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+# Copy all binaries from downloader (tunly, tunly-server, tunly-client)
+COPY --from=downloader /tmp/tunly /tmp/tunly-server /tmp/tunly-client /app/
+
+RUN chmod +x /app/tunly-server /app/tunly-client /app/tunly
 
 # Expose default port
 EXPOSE 8080
