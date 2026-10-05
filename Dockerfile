@@ -1,34 +1,27 @@
 FROM alpine:3.20
 
-# Install ca-certificates for HTTPS, curl, and build tools
+# Install ca-certificates for HTTPS and curl
 RUN apk add --no-cache ca-certificates curl
 
-# Build Tunly from source
-FROM rust:latest AS builder
+# Set version (can be overridden at build time)
+ARG TUNLY_VERSION=v0.3.0
+ARG TARGETARCH
 
-WORKDIR /build
-
-# Clone the repository
-RUN git clone https://github.com/0xReLogic/Tunly.git .
-
-WORKDIR /build/backend
-
-# Build release binary
-RUN cargo build --release
-
-# Runtime stage
-FROM alpine:3.20
-
-RUN apk add --no-cache ca-certificates
-
+# Create app directory
 WORKDIR /app
 
-# Copy binaries from builder
-COPY --from=builder /build/backend/target/release/tunly-server /app/
-COPY --from=builder /build/backend/target/release/tunly-client /app/
-COPY --from=builder /build/backend/target/release/tunly /app/
-
-RUN chmod +x /app/tunly /app/tunly-server /app/tunly-client
+# Download and extract the appropriate binary based on architecture
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+      BINARY="tunly-linux-x86_64.tar.gz"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+      BINARY="tunly-linux-aarch64.tar.gz"; \
+    else \
+      echo "Unsupported architecture: $TARGETARCH" && exit 1; \
+    fi && \
+    curl -L "https://github.com/0xReLogic/Tunly/releases/download/${TUNLY_VERSION}/${BINARY}" -o tunly.tar.gz && \
+    tar -xzf tunly.tar.gz && \
+    rm tunly.tar.gz && \
+    chmod +x tunly tunly-server tunly-client
 
 # Expose default port
 EXPOSE 8080
