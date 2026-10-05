@@ -10,10 +10,10 @@
 [![Frontend CI](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/frontend-ci.yml)
 [![Release](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml/badge.svg)](https://github.com/0xReLogic/Tunly/actions/workflows/release.yml)
 
-**Tunly** is a self-hosted HTTP tunnel for sharing a local app from anywhere.
+**Tunly** is a lightweight, open-source HTTP tunnel solution for developers who want full control and instant setup.
 
-No account. No dashboard. No vendor lock-in. Run one small server, connect your
-local machine, and share the public URL.
+No quotas. No dashboards. No tracking. Just you, your app, and a tunnel.
+Keep everything on your infrastructure. Full control. No vendor lock-in.
 
 [Download Tunly](https://github.com/0xReLogic/Tunly/releases) · [Quick Start](#self-hosted-setup) · [Report a bug](https://github.com/0xReLogic/Tunly/issues/new)
 
