@@ -76,6 +76,8 @@ pub struct AccessLogEntry {
     pub uri: String,
     pub status: u16,
     pub dur_ms: u128,
+    pub bytes_in: u64,   // Request body size
+    pub bytes_out: u64,  // Response body size
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DashboardTunnelInfo {
@@ -110,6 +112,8 @@ pub struct SessionState {
     pub last_seen: Mutex<Instant>,
     pub access_log: Mutex<Vec<AccessLogEntry>>, // ring buffer (last N)
     pub request_count: AtomicU64, // Total requests for this tunnel
+    pub bytes_in: AtomicU64,  // Total bytes received from client
+    pub bytes_out: AtomicU64, // Total bytes sent to client
 }
 
 pub struct Metrics {
@@ -571,6 +575,8 @@ pub async fn client_ws(stream: WebSocket, state: Arc<AppState>, sid: String) {
         last_seen: Mutex::new(Instant::now()),
         access_log: Mutex::new(Vec::new()),
         request_count: AtomicU64::new(0),
+        bytes_in: AtomicU64::new(0),
+        bytes_out: AtomicU64::new(0),
     });
     {
         let mut sessions = state.sessions.write().await;
@@ -792,6 +798,11 @@ pub async fn proxy_logic(
                 .into_response();
         }
     };
+    
+    // Track request body size
+    let req_body_size = body_bytes.len() as u64;
+    sess.bytes_in.fetch_add(req_body_size, Ordering::SeqCst);
+    
     let (body_b64, is_compressed) = compress_body(&body_bytes);
 
     let proxy_req = ProxyRequest {
@@ -828,6 +839,8 @@ pub async fn proxy_logic(
                 uri: uri_str.clone(),
                 status: StatusCode::BAD_GATEWAY.as_u16(),
                 dur_ms,
+                bytes_in: req_body_size,
+                bytes_out: 0,
             });
             if log.len() > 50 {
                 let drop_n = log.len() - 50;
@@ -857,6 +870,8 @@ pub async fn proxy_logic(
                     uri: uri_str.clone(),
                     status: StatusCode::BAD_GATEWAY.as_u16(),
                     dur_ms,
+                    bytes_in: req_body_size,
+                    bytes_out: 0,
                 });
                 if log.len() > 50 {
                     let drop_n = log.len() - 50;
@@ -885,6 +900,8 @@ pub async fn proxy_logic(
                     uri: uri_str.clone(),
                     status: StatusCode::GATEWAY_TIMEOUT.as_u16(),
                     dur_ms,
+                    bytes_in: req_body_size,
+                    bytes_out: 0,
                 });
                 if log.len() > 50 {
                     let drop_n = log.len() - 50;
@@ -974,6 +991,11 @@ pub async fn proxy_logic(
     }
 
     let body = decompress_body(&resp.body_b64, resp.is_compressed);
+    let resp_body_size = body.len() as u64;
+    
+    // Track response body size
+    sess.bytes_out.fetch_add(resp_body_size, Ordering::SeqCst);
+    
     let response = builder
         .body(axum::body::Body::from(body))
         .unwrap()
@@ -989,6 +1011,8 @@ pub async fn proxy_logic(
             uri: uri_str.clone(),
             status: response.status().as_u16(),
             dur_ms,
+            bytes_in: req_body_size,
+            bytes_out: resp_body_size,
         });
         if log.len() > 50 {
             let drop_n = log.len() - 50;
