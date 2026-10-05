@@ -99,7 +99,23 @@ testing to avoid Let's Encrypt production rate limits.
 
 ## Quick Start
 
-### Self-hosted setup
+### Docker (Recommended)
+
+Fastest way to deploy Tunly server + token UI:
+
+```bash
+git clone https://github.com/0xReLogic/Tunly
+cd Tunly
+docker-compose up
+```
+
+Then:
+- **Server**: http://localhost:8080
+- **Frontend (token UI)**: http://localhost:3000
+
+Both services run automatically. Get a token from the UI and start tunneling.
+
+### Self-hosted setup (Binary)
 
 1. **Download** `tunly-client` and `tunly-server` for your OS from [Releases](https://github.com/0xReLogic/Tunly/releases)
 2. **Start the server** on your VPS or cloud:
@@ -119,6 +135,34 @@ testing to avoid Let's Encrypt production rate limits.
 > - Long flags use kebab-case (e.g., `--remote-host`, `--token-url`, `--allow-token-query`).
 > - Default auth uses header `Authorization: Bearer <token>`. Query `?token=...` works only if server enables `--allow-token-query`.
 > - For self-host without TLS, pass `--use-wss=false` so the client uses `ws://` (the flag accepts an explicit boolean, e.g., `--use-wss=false`).
+
+### Deploy Frontend Separately (Optional)
+
+If you want to run the token UI without Docker:
+
+1. **Install dependencies**:
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+2. **Build the frontend**:
+   ```bash
+   npm run build
+   ```
+
+3. **Set environment variables**:
+   ```bash
+   export BACKEND_BASE_URL=http://your-server.com:8080
+   export TUNLY_INTERNAL_KEY=your-internal-key
+   ```
+
+4. **Start the frontend**:
+   ```bash
+   npm start
+   ```
+
+The frontend will be available at `http://localhost:3000` and forward token requests to your Tunly server.
 
 ### Build from source
 
