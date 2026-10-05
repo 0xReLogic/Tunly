@@ -11,10 +11,9 @@ services:
       - "8080:8080"
     environment:
       # Optional: Set a fixed token for authentication
-      # TUNLY_TOKEN: "your-secret-token-here"
-      
+      TUNLY_TOKEN: ""
       # Optional: Internal key to protect /token endpoint
-      # TUNLY_INTERNAL_KEY: "your-internal-key-here"
+      TUNLY_INTERNAL_KEY: ""
     volumes:
       # Optional: Persist ACME certificates
       - tunly_acme:/var/lib/tunly/acme
