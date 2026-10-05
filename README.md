@@ -12,7 +12,7 @@
 
 **Tunly** is a lightweight, open-source HTTP tunnel solution for developers who want full control and instant setup.
 
-No quotas. No dashboards. No tracking. Just you, your app, and a tunnel.
+No signup. No limits. No tracking. Just you, your app, and a tunnel.
 Keep everything on your infrastructure. Full control. No vendor lock-in.
 
 [Download Tunly](https://github.com/0xReLogic/Tunly/releases) · [Quick Start](#self-hosted-setup) · [Report a bug](https://github.com/0xReLogic/Tunly/issues/new)
