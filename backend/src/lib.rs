@@ -26,13 +26,13 @@ use futures::{SinkExt, StreamExt};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use prometheus::{Counter, Encoder, Gauge, Histogram, HistogramOpts, Registry, TextEncoder};
 use rand::Rng;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::TraceLayer;
-use rusqlite::{Connection, params};
 
 // Simple per-IP rate limit for /token: 10 requests per 60 seconds
 pub const RL_WINDOW_SECS: u64 = 60;
@@ -76,8 +76,8 @@ pub struct AccessLogEntry {
     pub uri: String,
     pub status: u16,
     pub dur_ms: u128,
-    pub bytes_in: u64,   // Request body size
-    pub bytes_out: u64,  // Response body size
+    pub bytes_in: u64,  // Request body size
+    pub bytes_out: u64, // Response body size
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DashboardTunnelInfo {
@@ -111,9 +111,9 @@ pub struct SessionState {
     pub _created_at: Instant,
     pub last_seen: Mutex<Instant>,
     pub access_log: Mutex<Vec<AccessLogEntry>>, // ring buffer (last N)
-    pub request_count: AtomicU64, // Total requests for this tunnel
-    pub bytes_in: AtomicU64,  // Total bytes received from client
-    pub bytes_out: AtomicU64, // Total bytes sent to client
+    pub request_count: AtomicU64,               // Total requests for this tunnel
+    pub bytes_in: AtomicU64,                    // Total bytes received from client
+    pub bytes_out: AtomicU64,                   // Total bytes sent to client
 }
 
 pub struct Metrics {
@@ -262,7 +262,7 @@ pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
 // Initialize SQLite database for request logging (optional persistent storage)
 pub fn init_db(db_path: &str) -> Result<Connection, rusqlite::Error> {
     let conn = Connection::open(db_path)?;
-    
+
     // Create request_logs table with circular buffer pattern
     conn.execute(
         "CREATE TABLE IF NOT EXISTS request_logs (
@@ -276,13 +276,13 @@ pub fn init_db(db_path: &str) -> Result<Connection, rusqlite::Error> {
         )",
         [],
     )?;
-    
+
     // Create index for efficient querying
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_session_timestamp ON request_logs(session_id, timestamp DESC)",
         [],
     )?;
-    
+
     Ok(conn)
 }
 
@@ -299,20 +299,16 @@ pub fn log_request_to_db(
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     conn.execute(
         "INSERT INTO request_logs (session_id, timestamp, method, uri, status, latency_ms) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![session_id, now, method, uri, status, latency_ms as i64],
     )?;
-    
+
     // Clean up old entries if > 10k rows
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM request_logs",
-        [],
-        |row| row.get(0),
-    )?;
-    
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM request_logs", [], |row| row.get(0))?;
+
     if count > 10000 {
         conn.execute(
             "DELETE FROM request_logs WHERE id IN (
@@ -321,7 +317,7 @@ pub fn log_request_to_db(
             params![count - 5000], // Keep 5000 most recent
         )?;
     }
-    
+
     Ok(())
 }
 
@@ -798,11 +794,11 @@ pub async fn proxy_logic(
                 .into_response();
         }
     };
-    
+
     // Track request body size
     let req_body_size = body_bytes.len() as u64;
     sess.bytes_in.fetch_add(req_body_size, Ordering::SeqCst);
-    
+
     let (body_b64, is_compressed) = compress_body(&body_bytes);
 
     let proxy_req = ProxyRequest {
@@ -992,10 +988,10 @@ pub async fn proxy_logic(
 
     let body = decompress_body(&resp.body_b64, resp.is_compressed);
     let resp_body_size = body.len() as u64;
-    
+
     // Track response body size
     sess.bytes_out.fetch_add(resp_body_size, Ordering::SeqCst);
-    
+
     let response = builder
         .body(axum::body::Body::from(body))
         .unwrap()
@@ -1021,7 +1017,7 @@ pub async fn proxy_logic(
     }
     // Increment request counter for this session
     sess.request_count.fetch_add(1, Ordering::SeqCst);
-    
+
     tracing::info!(
         "PROXY {} {} -> {} in {}ms (sid={})",
         method,
@@ -1186,13 +1182,11 @@ pub async fn api_tunnels(
 }
 
 // Dashboard API: Get server statistics
-pub async fn api_stats(
-    State(state): State<Arc<AppState>>,
-) -> axum::response::Json<DashboardStats> {
+pub async fn api_stats(State(state): State<Arc<AppState>>) -> axum::response::Json<DashboardStats> {
     let sessions = state.sessions.read().await;
     let total_requests: u64 = sessions
-        .iter()
-        .map(|(_, sess)| sess.request_count.load(Ordering::SeqCst))
+        .values()
+        .map(|sess| sess.request_count.load(Ordering::SeqCst))
         .sum();
 
     axum::response::Json(DashboardStats {
@@ -1214,10 +1208,8 @@ pub async fn api_requests(
         .unwrap()
         .as_secs();
 
-    for (_sid, sess) in sessions.iter() {
-        let log = futures::executor::block_on(async {
-            sess.access_log.lock().await.clone()
-        });
+    for sess in sessions.values() {
+        let log = futures::executor::block_on(async { sess.access_log.lock().await.clone() });
 
         for entry in log {
             all_requests.push(DashboardRequest {
@@ -1231,7 +1223,7 @@ pub async fn api_requests(
     }
 
     // Sort by timestamp descending (newest first)
-    all_requests.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    all_requests.sort_by_key(|a| std::cmp::Reverse(a.timestamp));
 
     axum::response::Json(all_requests)
 }

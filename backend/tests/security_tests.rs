@@ -33,6 +33,9 @@ async fn test_concurrent_proxy_flooding() {
         _created_at: Instant::now(),
         last_seen: Mutex::new(Instant::now()),
         access_log: Mutex::new(Vec::new()),
+        request_count: AtomicU64::new(0),
+        bytes_in: AtomicU64::new(0),
+        bytes_out: AtomicU64::new(0),
     });
 
     let sid = "concurrent-test-session".to_string();
@@ -165,6 +168,9 @@ async fn test_body_size_limit() {
         _created_at: Instant::now(),
         last_seen: Mutex::new(Instant::now()),
         access_log: Mutex::new(Vec::new()),
+        request_count: AtomicU64::new(0),
+        bytes_in: AtomicU64::new(0),
+        bytes_out: AtomicU64::new(0),
     });
 
     state
