@@ -1,6 +1,6 @@
 [package]
 name = "tunly"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A lightweight, self-hosted HTTP tunnel for exposing local applications to the internet."
