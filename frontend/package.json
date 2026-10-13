@@ -19,9 +19,9 @@
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.6",
-    "@radix-ui/react-dialog": "^1.1.23",
-    "@radix-ui/react-tabs": "^1.1.21",
+    "@eslint/eslintrc": "^3.3.7",
+    "@radix-ui/react-dialog": "^1.2.0",
+    "@radix-ui/react-tabs": "^1.1.22",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^25",
     "@types/react": "^19",
@@ -30,7 +30,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "eslint": "^10",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.4.0",
     "postcss": "^8",
     "shadcn-ui": "^0.9.5",
     "tailwind-merge": "^3.7.0",
