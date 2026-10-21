@@ -85,4 +85,4 @@ panic = "abort"
 opt-level = 2
 
 [dev-dependencies]
-axum-test = "20.0.0"
+axum-test = "21.0.0"
